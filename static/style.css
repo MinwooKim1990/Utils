@@ -1,635 +1,819 @@
 :root {
-    color-scheme: light dark;
-    --bg: #f8fafc;
-    --fg: #1e293b;
-    --card: #ffffff;
-    --border: #e2e8f0;
-    --link: #3b82f6;
-    --danger: #ef4444;
-    --highlight: #f59e0b;
-    --hover: #f1f5f9;
-    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-    --radius: 8px;
-    --transition: all 0.2s ease;
+  color-scheme: light dark;
+  --bg: #f8fafc;
+  --fg: #1e293b;
+  --card: #ffffff;
+  --border: #e2e8f0;
+  --link: #3b82f6;
+  --danger: #ef4444;
+  --highlight: #f59e0b;
+  --hover: #f1f5f9;
+  --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --radius: 8px;
+  --transition: all 0.2s ease;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a;
+    --fg: #e2e8f0;
+    --card: #1e293b;
+    --border: #334155;
+    --link: #60a5fa;
+    --danger: #f87171;
+    --highlight: #fbbf24;
+    --hover: #1e293b;
+    --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f172a;
-      --fg: #e2e8f0;
-      --card: #1e293b;
-      --border: #334155;
-      --link: #60a5fa;
-      --danger: #f87171;
-      --highlight: #fbbf24;
-      --hover: #1e293b;
-      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-    }
-  }
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-  body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-    display: flex;
-    height: 100vh;
-    background: var(--bg);
-    color: var(--fg);
-    font-size: 14px;
-    line-height: 1.5;
-  }
-  .sidebar {
-    width: 280px;
-    background: var(--card);
-    padding: 16px;
-    overflow-y: auto;
-    border-right: 1px solid var(--border);
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    box-shadow: var(--shadow);
-    z-index: 10;
-  }
-  .sidebar h4 { 
-    font-weight: 600;
-    font-size: 16px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .drive-selector { 
-    display: flex;
-    gap: 8px;
-    flex-wrap: wrap;
-  }
-  .drive-selector a {
-    padding: 8px 12px;
-    background: var(--link);
+}
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  display: flex;
+  height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.sidebar {
+  width: 280px;
+  background: var(--card);
+  padding: 16px;
+  overflow-y: auto;
+  border-right: 1px solid var(--border);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: var(--shadow);
+  z-index: 10;
+}
+.sidebar h4 { 
+  font-weight: 600;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.drive-selector { 
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.drive-selector a {
+  padding: 8px 12px;
+  background: var(--link);
+  color: white;
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-weight: 500;
+  transition: var(--transition);
+  font-size: 14px;
+}
+.drive-selector a:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.drive-selector a.selected {
+  background: var(--highlight);
+  font-weight: 600;
+}
+.tree {
+  overflow-y: auto;
+  flex-grow: 1;
+}
+.tree ul { 
+  list-style: none; 
+  padding-left: 16px; 
+}
+.tree li { 
+  margin: 6px 0; 
+  cursor: pointer; 
+  font-size: 14px; 
+  transition: var(--transition);
+}
+.tree li:hover {
+  color: var(--link);
+}
+.tree li span {
+  display: inline-flex;
+  align-items: center;
+  transition: var(--transition);
+  cursor: pointer;
+}
+.tree li span:hover {
+  transform: scale(1.1);
+}
+.tree li a.folder-link {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  max-width: 200px;
+  vertical-align: middle;
+  transition: var(--transition);
+}
+.tree li.expanded > a.folder-link {
+  font-weight: 600;
+  color: var(--highlight);
+}
+.tree li a.file-link {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: inline-block;
+  max-width: 200px;
+  vertical-align: middle;
+}
+.sidebar a { 
+  text-decoration: none; 
+  color: var(--link); 
+}
+.sidebar a:hover { 
+  opacity: 0.9;
+}
+.content {
+  flex-grow: 1;
+  padding: 24px;
+  background: var(--bg);
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  height: 100vh; /* 전체 창 높이 고정 */
+  /* overflow-y 제거 */
+}
+.top-bar {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.nav-buttons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+button {
+  padding: 8px 16px;
+  background: var(--link);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: var(--transition);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+button:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+.search-bar { 
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  box-shadow: var(--shadow);
+}
+.search-bar input {
+  flex-grow: 1;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--fg);
+  font-size: 14px;
+  padding: 4px 0;
+}
+.sort-buttons {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 8px 16px;
+  box-shadow: var(--shadow);
+}
+.sort-buttons span {
+  font-weight: 500;
+}
+.sort-buttons a {
+  text-decoration: none;
+  color: var(--link);
+  font-weight: normal;
+  transition: var(--transition);
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+.sort-buttons a:hover {
+  background: var(--hover);
+}
+.sort-buttons a.selected {
+  font-weight: 600;
+  color: var(--highlight);
+}
+.location-bar {
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  box-shadow: var(--shadow);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.location-bar h3 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.file-list {
+  background: var(--card);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  /* overflow-y: auto;  스크롤 제거 */
+  max-height: calc(100vh - 250px); /* 필요 시 높이 조절 */
+}
+.file-list ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.file-entry {
+  display: flex;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  transition: var(--transition);
+  gap: 12px;
+  position: relative;
+}
+.file-entry:hover {
+  background: var(--hover);
+}
+.file-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+.file-name {
+  font-weight: 500;
+  flex-grow: 1;
+  max-width: 50%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.file-actions {
+  display: flex;
+  gap: 8px;
+}
+.file-entry a { 
+  color: var(--link); 
+  text-decoration: none; 
+  transition: var(--transition);
+  padding: 4px 8px;
+  border-radius: var(--radius);
+}
+.file-entry a:hover { 
+  background: var(--link);
+  color: white;
+}
+.file-entry a.delete-link {
+  color: var(--danger);
+}
+.file-entry a.delete-link:hover {
+  background: var(--danger);
+  color: white;
+}
+.file-info {
+  margin-left: auto;
+  text-align: right;
+  color: var(--fg);
+  opacity: 0.8;
+  font-size: 0.9em;
+}
+.thumb { 
+  height: 40px; 
+  width: 40px;
+  object-fit: cover;
+  border-radius: var(--radius); 
+  box-shadow: var(--shadow);
+}
+#drop-area {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  text-align: center;
+  transition: var(--transition);
+  background: var(--card);
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+#drop-area.highlight {
+  border-color: var(--link);
+  background: var(--hover);
+}
+#drop-area p {
+  margin: 0;
+}
+#drop-area form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+  max-width: 400px;
+}
+#upload-progress {
+  width: 100%;
+  margin-top: 16px;
+}
+#file-list {
+  flex: 1;           /* 파일 목록 영역이 남은 공간을 채우도록 */
+  overflow-y: auto;  /* 이 영역만 스크롤 */
+}
+.progress-item {
+  margin-bottom: 8px;
+  background: var(--hover);
+  border-radius: var(--radius);
+  padding: 8px;
+  overflow: hidden;
+}
+.progress-bar {
+  width: 0%;
+  height: 8px;
+  background-color: var(--link);
+  border-radius: 4px;
+  margin-top: 8px;
+  transition: width 0.2s;
+}
+/* --- Preview Modal Styles --- START */
+#preview-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.75); /* Dark semi-transparent background */
+  display: none; /* Hidden by default */
+  align-items: center;
+  justify-content: center;
+  z-index: 1000; /* Ensure it's on top */
+  padding: 20px;
+  box-sizing: border-box;
+}
+#preview-content {
+  position: relative;
+  background-color: var(--card, #fff); /* Use theme color */
+  padding: 20px;
+  border-radius: var(--radius);
+  box-shadow: 0 5px 15px rgba(0,0,0,0.3);
+  max-width: 95vw;
+  max-height: 90vh;
+  overflow: auto; /* Add scroll if content overflows */
+  display: flex;       /* Use flexbox to center content */
+  align-items: center;
+  justify-content: center;
+}
+#preview-close-btn {
+  position: absolute;
+  top: 15px;
+  right: 20px;
+  background: none;
+  border: none;
+  color: white;
+  font-size: 30px;
+  font-weight: bold;
+  cursor: pointer;
+  line-height: 1;
+  padding: 0 5px;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+}
+#preview-close-btn:hover {
+  color: #ddd;
+}
+#preview-filename {
+    position: absolute;
+    bottom: 10px;
+    left: 50%;
+    transform: translateX(-50%);
     color: white;
+    background-color: rgba(0, 0, 0, 0.6);
+    padding: 5px 15px;
     border-radius: var(--radius);
-    text-decoration: none;
-    font-weight: 500;
-    transition: var(--transition);
     font-size: 14px;
-  }
-  .drive-selector a:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-  .drive-selector a.selected {
-    background: var(--highlight);
-    font-weight: 600;
-  }
-  .tree {
-    overflow-y: auto;
-    flex-grow: 1;
-  }
-  .tree ul { 
-    list-style: none; 
-    padding-left: 16px; 
-  }
-  .tree li { 
-    margin: 6px 0; 
-    cursor: pointer; 
-    font-size: 14px; 
-    transition: var(--transition);
-  }
-  .tree li:hover {
-    color: var(--link);
-  }
-  .tree li span {
-    display: inline-flex;
-    align-items: center;
-    transition: var(--transition);
-    cursor: pointer;
-  }
-  .tree li span:hover {
-    transform: scale(1.1);
-  }
-  .tree li a.folder-link {
+    text-align: center;
+    max-width: 80%;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    display: inline-block;
-    max-width: 200px;
-    vertical-align: middle;
-    transition: var(--transition);
+}
+/* Ensure video/audio controls are visible in dark mode */
+@media (prefers-color-scheme: dark) {
+  #preview-content video::-webkit-media-controls-panel,
+  #preview-content audio::-webkit-media-controls-panel {
+    background-color: rgba(50, 50, 50, 0.9);
   }
-  .tree li.expanded > a.folder-link {
-    font-weight: 600;
-    color: var(--highlight);
-  }
-  .tree li a.file-link {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: inline-block;
-    max-width: 200px;
-    vertical-align: middle;
-  }
-  .sidebar a { 
-    text-decoration: none; 
-    color: var(--link); 
-  }
-  .sidebar a:hover { 
-    opacity: 0.9;
-  }
-  .content {
+}
+/* --- Preview Modal Styles --- END */
+
+/* --- Chat Interface Styles --- START */
+.content-wrapper { /* New wrapper for file list + chat */
+    display: flex;
     flex-grow: 1;
-    padding: 24px;
-    background: var(--bg);
-    box-sizing: border-box;
+    gap: 20px;
+    overflow: hidden; /* Prevent wrapper from causing body scroll */
+    height: calc(100vh - 150px); /* Adjust height considering top bars */
+}
+.main-content { /* Container for existing file elements */
+    flex: 3; /* Takes up more space */
     display: flex;
     flex-direction: column;
     gap: 20px;
-    height: 100vh; /* 전체 창 높이 고정 */
-    /* overflow-y 제거 */
-  }
-  .top-bar {
-    display: flex;
-    gap: 16px;
-    flex-wrap: wrap;
-  }
-  .nav-buttons {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-  }
-  button {
-    padding: 8px 16px;
-    background: var(--link);
-    color: white;
-    border: none;
-    border-radius: var(--radius);
-    cursor: pointer;
-    font-size: 14px;
-    font-weight: 500;
-    transition: var(--transition);
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  button:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-  .search-bar { 
-    display: flex;
-    align-items: center;
-    gap: 8px;
+    overflow-y: auto; /* Allow scrolling for file list + drop area */
+    height: 100%;
+}
+#chat-container {
+    flex: 2; /* Takes up less space */
     background: var(--card);
     border-radius: var(--radius);
-    padding: 8px 16px;
     box-shadow: var(--shadow);
-  }
-  .search-bar input {
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    height: 100%; /* Fill the height of content-wrapper */
+    box-sizing: border-box;
+}
+#chat-messages {
     flex-grow: 1;
-    border: none;
-    outline: none;
-    background: transparent;
+    overflow-y: auto;
+    margin-bottom: 12px;
+    /* Ensure internal scrolling */
+    overflow-y: auto;
+    /* Explicitly limit max-height to prevent pushing parent */
+    max-height: calc(100% - 50px); /* Adjust 50px based on input area height */
+    padding-right: 8px; /* For scrollbar */
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+.message {
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    max-width: 85%;
+    word-wrap: break-word;
+}
+.user-message {
+    background-color: var(--link);
+    color: white;
+    align-self: flex-end;
+    margin-left: auto;
+}
+.assistant-message {
+    background-color: var(--hover);
+    color: var(--fg);
+    align-self: flex-start;
+    margin-right: auto;
+}
+ #chat-input-area {
+    display: flex;
+    gap: 8px;
+    padding-top: 12px;
+}
+#chat-input {
+    flex-grow: 1;
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
     color: var(--fg);
     font-size: 14px;
-    padding: 4px 0;
-  }
-  .sort-buttons {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: var(--card);
-    border-radius: var(--radius);
-    padding: 8px 16px;
-    box-shadow: var(--shadow);
-  }
-  .sort-buttons span {
-    font-weight: 500;
-  }
-  .sort-buttons a {
-    text-decoration: none;
-    color: var(--link);
-    font-weight: normal;
+    outline: none;
     transition: var(--transition);
-    padding: 4px 8px;
-    border-radius: var(--radius);
-  }
-  .sort-buttons a:hover {
+}
+#chat-input:focus {
+  border-color: var(--link);
+}
+#send-button {
+   padding: 10px 18px;
+}
+#image-upload-button {
+    padding: 8px 12px;
     background: var(--hover);
-  }
-  .sort-buttons a.selected {
-    font-weight: 600;
-    color: var(--highlight);
-  }
-  .location-bar {
-    background: var(--card);
-    border-radius: var(--radius);
-    padding: 12px 16px;
-    box-shadow: var(--shadow);
+    color: var(--fg);
+}
+#image-upload-button:hover {
+    background: var(--border);
+    transform: none;
+    opacity: 1;
+}
+#image-upload {
+    display: none; /* Hide the actual file input */
+}
+#image-preview-area {
+    margin-top: 8px;
     display: flex;
     align-items: center;
     gap: 8px;
-  }
-  .location-bar h3 {
-    font-size: 16px;
-    font-weight: 600;
-  }
-  .file-list {
-    background: var(--card);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-    /* overflow-y: auto;  스크롤 제거 */
-    max-height: calc(100vh - 250px); /* 필요 시 높이 조절 */
-  }
-  .file-list ul {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  .file-entry {
-    display: flex;
-    align-items: center;
-    padding: 10px 16px;
-    border-bottom: 1px solid var(--border);
-    transition: var(--transition);
-    gap: 12px;
-    position: relative;
-  }
-  .file-entry:hover {
-    background: var(--hover);
-  }
-  .file-icon {
-    font-size: 20px;
-    flex-shrink: 0;
-  }
-  .file-name {
-    font-weight: 500;
-    flex-grow: 1;
-    max-width: 50%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .file-actions {
-    display: flex;
-    gap: 8px;
-  }
-  .file-entry a { 
-    color: var(--link); 
-    text-decoration: none; 
-    transition: var(--transition);
-    padding: 4px 8px;
-    border-radius: var(--radius);
-  }
-  .file-entry a:hover { 
-    background: var(--link);
-    color: white;
-  }
-  .file-entry a.delete-link {
-    color: var(--danger);
-  }
-  .file-entry a.delete-link:hover {
-    background: var(--danger);
-    color: white;
-  }
-  .file-info {
-    margin-left: auto;
-    text-align: right;
+}
+#image-preview {
+    max-height: 40px;
+    max-width: 100px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+#image-preview-area span {
+    font-size: 12px;
     color: var(--fg);
     opacity: 0.8;
-    font-size: 0.9em;
-  }
-  .thumb { 
-    height: 40px; 
-    width: 40px;
-    object-fit: cover;
-    border-radius: var(--radius); 
-    box-shadow: var(--shadow);
-  }
-  #drop-area {
-    border: 2px dashed var(--border);
-    border-radius: var(--radius);
-    padding: 24px;
-    text-align: center;
-    transition: var(--transition);
-    background: var(--card);
-    box-shadow: var(--shadow);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-  }
-  #drop-area.highlight {
-    border-color: var(--link);
-    background: var(--hover);
-  }
-  #drop-area p {
-    margin: 0;
-  }
-  #drop-area form {
-    display: flex;
-    flex-direction: column;
-    gap: 12px;
-    width: 100%;
-    max-width: 400px;
-  }
-  #upload-progress {
-    width: 100%;
-    margin-top: 16px;
-  }
-  #file-list {
-    flex: 1;           /* 파일 목록 영역이 남은 공간을 채우도록 */
-    overflow-y: auto;  /* 이 영역만 스크롤 */
-  }
-  .progress-item {
-    margin-bottom: 8px;
-    background: var(--hover);
-    border-radius: var(--radius);
-    padding: 8px;
-    overflow: hidden;
-  }
-  .progress-bar {
-    width: 0%;
-    height: 8px;
-    background-color: var(--link);
-    border-radius: 4px;
-    margin-top: 8px;
-    transition: width 0.2s;
-  }
-  /* --- Preview Modal Styles --- START */
-  #preview-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.75); /* Dark semi-transparent background */
-    display: none; /* Hidden by default */
-    align-items: center;
-    justify-content: center;
-    z-index: 1000; /* Ensure it's on top */
-    padding: 20px;
-    box-sizing: border-box;
-  }
-  #preview-content {
-    position: relative;
-    background-color: var(--card, #fff); /* Use theme color */
-    padding: 20px;
-    border-radius: var(--radius);
-    box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-    max-width: 95vw;
-    max-height: 90vh;
-    overflow: auto; /* Add scroll if content overflows */
-    display: flex;       /* Use flexbox to center content */
-    align-items: center;
-    justify-content: center;
-  }
-  #preview-close-btn {
-    position: absolute;
-    top: 15px;
-    right: 20px;
+}
+#remove-image-button {
     background: none;
     border: none;
-    color: white;
-    font-size: 30px;
-    font-weight: bold;
+    padding: 0;
+    color: var(--danger);
+    font-size: 16px;
     cursor: pointer;
     line-height: 1;
-    padding: 0 5px;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-  }
-  #preview-close-btn:hover {
-    color: #ddd;
-  }
-  #preview-filename {
-      position: absolute;
-      bottom: 10px;
-      left: 50%;
-      transform: translateX(-50%);
-      color: white;
-      background-color: rgba(0, 0, 0, 0.6);
-      padding: 5px 15px;
-      border-radius: var(--radius);
-      font-size: 14px;
-      text-align: center;
-      max-width: 80%;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-  }
-  /* Ensure video/audio controls are visible in dark mode */
-  @media (prefers-color-scheme: dark) {
-    #preview-content video::-webkit-media-controls-panel,
-    #preview-content audio::-webkit-media-controls-panel {
-      background-color: rgba(50, 50, 50, 0.9);
-    }
-  }
-  /* --- Preview Modal Styles --- END */
-
-  /* --- Chat Interface Styles --- START */
-  .content-wrapper { /* New wrapper for file list + chat */
-      display: flex;
-      flex-grow: 1;
-      gap: 20px;
-      overflow: hidden; /* Prevent wrapper from causing body scroll */
-      height: calc(100vh - 150px); /* Adjust height considering top bars */
-  }
-  .main-content { /* Container for existing file elements */
-      flex: 3; /* Takes up more space */
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      overflow-y: auto; /* Allow scrolling for file list + drop area */
-      height: 100%;
-  }
-  #chat-container {
-      flex: 2; /* Takes up less space */
-      background: var(--card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      height: 100%; /* Fill the height of content-wrapper */
-      box-sizing: border-box;
-  }
-  #chat-messages {
-      flex-grow: 1;
-      overflow-y: auto;
-      margin-bottom: 12px;
-      /* Ensure internal scrolling */
-      overflow-y: auto;
-      /* Explicitly limit max-height to prevent pushing parent */
-      max-height: calc(100% - 50px); /* Adjust 50px based on input area height */
-      padding-right: 8px; /* For scrollbar */
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-  }
-  .message {
-      padding: 8px 12px;
-      border-radius: var(--radius);
-      max-width: 85%;
-      word-wrap: break-word;
-  }
-  .user-message {
-      background-color: var(--link);
-      color: white;
-      align-self: flex-end;
-      margin-left: auto;
-  }
-  .assistant-message {
-      background-color: var(--hover);
-      color: var(--fg);
-      align-self: flex-start;
-      margin-right: auto;
-  }
-   #chat-input-area {
-      display: flex;
-      gap: 8px;
-      padding-top: 12px;
-  }
-  #chat-input {
-      flex-grow: 1;
-      padding: 10px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--bg);
-      color: var(--fg);
-      font-size: 14px;
-      outline: none;
-      transition: var(--transition);
-  }
-  #chat-input:focus {
-    border-color: var(--link);
-  }
-  #send-button {
-     padding: 10px 18px;
-  }
-  #image-upload-button {
-      padding: 8px 12px;
-      background: var(--hover);
-      color: var(--fg);
-  }
-  #image-upload-button:hover {
-      background: var(--border);
-      transform: none;
-      opacity: 1;
-  }
-  #image-upload {
-      display: none; /* Hide the actual file input */
-  }
-  #image-preview-area {
-      margin-top: 8px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-  }
-  #image-preview {
-      max-height: 40px;
-      max-width: 100px;
-      border-radius: 4px;
-      border: 1px solid var(--border);
-  }
-  #image-preview-area span {
-      font-size: 12px;
-      color: var(--fg);
-      opacity: 0.8;
-  }
-  #remove-image-button {
-      background: none;
-      border: none;
-      padding: 0;
-      color: var(--danger);
-      font-size: 16px;
-      cursor: pointer;
-      line-height: 1;
-  }
-  .message.user-message img.attached-image-thumb {
-      max-width: 150px;
-      max-height: 100px;
-      border-radius: var(--radius);
-      margin-top: 5px;
-      display: block;
-      border: 1px solid rgba(255, 255, 255, 0.5);
-  }
-  .message.assistant-message img.attached-image-thumb { /* Should not happen normally */
-     display: none;
-  }
-  .model-selector {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      margin-bottom: 10px;
-      padding-bottom: 10px;
-      border-bottom: 1px solid var(--border);
-  }
-  .model-selector label {
-      font-weight: 500;
-  }
-  #model-select {
-      padding: 6px 10px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      background: var(--bg);
-      color: var(--fg);
-      font-size: 13px;
-      flex-grow: 1;
-  }
-  #mic-button {
-      padding: 8px 12px;
-      background: var(--hover);
-      color: var(--fg);
-  }
-  #mic-button.recording {
-      background: var(--danger);
-      color: white;
-      animation: pulse 1.5s infinite;
-  }
-  #mic-status {
-      font-size: 12px;
-      color: var(--fg);
-      opacity: 0.7;
-      margin-left: 5px;
-      min-width: 60px; /* Prevent layout shifts */
-      text-align: left;
-  }
-  @keyframes pulse {
-      0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
-      70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
-      100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
-  }
-  /* --- Chat Interface Styles --- END */
-
-  /* Refresh Button positioning and styling */
-  #chat-header {
-    display: flex; /* Use flexbox */
-    justify-content: space-between; /* Push title and button to opposite ends */
-    align-items: center; /* Vertically align items */
+}
+.message.user-message img.attached-image-thumb {
+    max-width: 150px;
+    max-height: 100px;
+    border-radius: var(--radius);
+    margin-top: 5px;
+    display: block;
+    border: 1px solid rgba(255, 255, 255, 0.5);
+}
+.message.assistant-message img.attached-image-thumb { /* Should not happen normally */
+   display: none;
+}
+.model-selector {
+    display: flex;
+    align-items: center;
+    gap: 8px;
     margin-bottom: 10px;
-    padding-bottom: 10px; /* Keep consistent with model selector border */
-    border-bottom: 1px solid var(--border); /* Keep border */
-  }
-
-  #chat-header h4 {
-    margin: 0; /* Remove default margin */
-  }
-
-  #refresh-chat-button {
-    background: none;
-    border: none;
-    font-size: 16px; /* Slightly smaller font size */
-    cursor: pointer;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+}
+.model-selector label {
+    font-weight: 500;
+}
+#model-select {
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
     color: var(--fg);
-    opacity: 0.6; /* Make it slightly less prominent */
-    padding: 2px 4px; /* Reduce padding */
-    line-height: 1; /* Ensure tight line height */
-    border-radius: 4px; /* Optional: add slight rounding */
-    transition: all 0.2s ease; /* Keep transition */
-  }
+    font-size: 13px;
+    flex-grow: 1;
+}
+#mic-button {
+    padding: 8px 12px;
+    background: var(--hover);
+    color: var(--fg);
+}
+#mic-button.recording {
+    background: var(--danger);
+    color: white;
+    animation: pulse 1.5s infinite;
+}
+#mic-status {
+    font-size: 12px;
+    color: var(--fg);
+    opacity: 0.7;
+    margin-left: 5px;
+    min-width: 60px; /* Prevent layout shifts */
+    text-align: left;
+}
+@keyframes pulse {
+    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+    70% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+}
+/* --- Chat Interface Styles --- END */
 
-  #refresh-chat-button:hover {
+/* Refresh Button positioning and styling */
+#chat-header {
+  display: flex; /* Use flexbox */
+  justify-content: space-between; /* Push title and button to opposite ends */
+  align-items: center; /* Vertically align items */
+  margin-bottom: 10px;
+  padding-bottom: 10px; /* Keep consistent with model selector border */
+  border-bottom: 1px solid var(--border); /* Keep border */
+}
+
+#chat-header h4 {
+  margin: 0; /* Remove default margin */
+}
+
+#refresh-chat-button {
+  background: none;
+  border: none;
+  font-size: 16px; /* Slightly smaller font size */
+  cursor: pointer;
+  color: var(--fg);
+  opacity: 0.6; /* Make it slightly less prominent */
+  padding: 2px 4px; /* Reduce padding */
+  line-height: 1; /* Ensure tight line height */
+  border-radius: 4px; /* Optional: add slight rounding */
+  transition: all 0.2s ease; /* Keep transition */
+}
+
+#refresh-chat-button:hover {
+  opacity: 1;
+  background-color: var(--hover); /* Add subtle background on hover */
+  transform: rotate(90deg);
+}
+
+/* --- Preview + Chat Wrapper Styles (for LLM-analyzable files) --- START */
+.preview-chat-instance {
+  position: fixed; /* 화면 기준 배치 */
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%); /* 중앙 정렬 */
+  width: 90vw; /* 화면 너비의 90% */
+  height: 85vh; /* 화면 높이의 85% */
+  background-color: var(--card);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+  z-index: 500; /* 다른 요소 위에 오도록 */
+  display: flex;
+  flex-direction: column; /* 헤더와 컨텐츠 영역 분리 */
+  overflow: hidden; /* 내부 스크롤 관리 */
+  border: 1px solid var(--border);
+}
+
+.preview-chat-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 15px;
+  border-bottom: 1px solid var(--border);
+  background-color: var(--hover); /* 약간 다른 배경색 */
+}
+
+.preview-chat-filename {
+  font-weight: 600;
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 50px); /* 버튼 공간 확보 */
+}
+
+.preview-chat-close-btn {
+  background: none;
+  border: none;
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--fg);
+  opacity: 0.7;
+  cursor: pointer;
+  padding: 0 5px;
+  line-height: 1;
+}
+.preview-chat-close-btn:hover {
+  opacity: 1;
+  color: var(--danger);
+}
+
+.preview-chat-content {
+  display: flex;
+  flex-grow: 1;
+  overflow: hidden; /* 내부 컨텐츠 스크롤 방지 */
+  height: calc(100% - 40px); /* 헤더 높이 제외 */
+}
+
+.preview-area {
+  flex: 3; /* 비율 조정 가능 */
+  border-right: 1px solid var(--border);
+  padding: 15px;
+  overflow-y: auto; /* 내용 길어지면 스크롤 */
+  background-color: var(--bg); /* 미리보기 배경 구분 */
+  display: flex; /* 중앙 정렬 용이하도록 */
+  justify-content: center;
+  align-items: center;
+}
+/* 미리보기 내용(이미지, 비디오 등) 스타일 */
+.preview-area img,
+.preview-area video,
+.preview-area iframe {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; /* 비율 유지 */
+    display: block;
+    margin: auto;
+}
+.preview-area .preview-placeholder {
+    color: var(--fg);
+    opacity: 0.6;
+    font-style: italic;
+    text-align: center;
+}
+
+.chat-area { /* Preview+Chat UI 내부의 채팅 영역 */
+  flex: 2; /* 비율 조정 가능 */
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 중요: content 영역 채우도록 */
+  overflow: hidden; /* 내부에서 스크롤 관리 */
+}
+
+/* 채팅 영역 내부 스타일 (기존 #chat-container 스타일 참조 및 조정) */
+.chat-area .model-selector {
+    /* Match main chat style */
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    margin-bottom: 10px; /* Added margin like main */
+    border-bottom: 1px solid var(--border);
+}
+.chat-area .chat-messages { /* 클래스 사용 */
+  flex-grow: 1;
+  overflow-y: auto;
+  /* Match main chat padding/margin/border structure more closely */
+  padding: 12px 16px; /* Consistent padding */
+  margin-bottom: 0; /* Remove margin, border is above input area */
+  /* border-bottom: none; Remove border, border is handled by model-selector */
+  /* Adjust max-height if needed, based on actual rendered height of siblings */
+  max-height: calc(100% - 130px); /* Re-estimate based on header, selector, input, etc. */
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.chat-area .chat-input-area {
+  /* Match main chat style EXACTLY */
+  display: flex;         /* <<<<< ADDED: Force flex display */
+  align-items: center;   /* <<<<< ADDED: Align items vertically */
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+
+/* Ensure input and buttons within chat-area input area behave correctly */
+.chat-area .chat-input-area input[type="text"] {
+    flex-grow: 1; /* Allow input to take remaining space */
+    /* Inherit other styles like padding, border, etc. from main chat-input */
+    padding: 10px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg);
+    color: var(--fg);
+    font-size: 14px;
+    outline: none;
+    transition: var(--transition);
+}
+.chat-area .chat-input-area input[type="text"]:focus {
+  border-color: var(--link);
+}
+
+.chat-area .chat-input-area button {
+   /* Ensure buttons don't grow and use main chat padding */
+   flex-shrink: 0;
+   padding: 10px 18px; /* Match #send-button style */
+}
+
+/* Adjust specific button padding if needed (e.g., image button) */
+.chat-area .chat-input-area #image-upload-button,
+.chat-area .chat-input-area #mic-button {
+    padding: 8px 12px; /* Match corresponding main buttons */
+    background: var(--hover);
+    color: var(--fg);
+}
+.chat-area .chat-input-area #image-upload-button:hover,
+.chat-area .chat-input-area #mic-button:hover {
+    background: var(--border);
+    transform: none;
     opacity: 1;
-    background-color: var(--hover); /* Add subtle background on hover */
-    transform: rotate(90deg);
-  }
+}
+
+.chat-area .image-preview-area {
+    /* Match main chat style */
+    padding: 0 16px 8px; /* Keep padding for spacing */
+    margin-top: 8px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.chat-area .mic-status {
+    /* Match main chat style */
+    padding: 0 16px 5px;
+    margin-left: 5px;
+    text-align: left;
+    font-size: 12px;
+    opacity: 0.7;
+    min-height: 1em;
+    min-width: 60px;
+}
+
+/* --- Preview + Chat Wrapper Styles --- END */

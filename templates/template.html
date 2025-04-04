@@ -133,796 +133,690 @@
     </div>
 
     <script>
-      // --- Preview Modal Elements --- START
+      // --- Preview Modal Elements (For Preview-Only Files) --- START
       const previewOverlay = document.getElementById('preview-overlay');
       const previewContent = document.getElementById('preview-content');
       const previewCloseBtn = document.getElementById('preview-close-btn');
       const previewFilename = document.getElementById('preview-filename');
       // --- Preview Modal Elements --- END
 
-      // 좌측 트리의 폴더 링크 클릭 시: 페이지 새로고침 없이 자식 목록 토글 + 파일 리스트 AJAX 갱신
-      document.addEventListener('DOMContentLoaded', function() {
-        // 이벤트 위임을 사용하여 왼쪽 트리의 폴더 링크에 클릭 이벤트를 추가
-        document.querySelector('.tree').addEventListener('click', function(e) {
-          let target = e.target;
-          if (target.tagName.toLowerCase() === 'a' && target.classList.contains('folder-link')) {
-            e.preventDefault();
-            // 토글: 해당 li의 toggle-arrow를 클릭한 효과
-            let li = target.parentElement;
-            let arrow = li.querySelector('.toggle-arrow');
-            if (arrow) {
-              toggleChildren(arrow);
-            }
-            // AJAX 호출로 오른쪽 파일 리스트 업데이트
-            loadFileList(target.getAttribute('data-path'));
-            // (원한다면 history.pushState로 URL도 갱신 가능)
-          }
-        });
-      });
-  
-      function toggleChildren(el) {
-        const li = el.parentElement;
-        let childUl = li.querySelector('ul');
-        if (!childUl) return; // ul이 없으면 아무것도 하지 않음
-
-        // 만약 ul이 비어있다면 동적으로 자식 목록을 불러올 수 있습니다.
-        if (childUl.innerHTML.trim() === "") {
-                const path = li.querySelector('.folder-link').getAttribute('data-path');
-                // AJAX 호출로 자식 폴더 목록을 불러온 후 childUl에 채워넣기 (예시)
-                fetch(`/folder_children?drive={{ drive }}&api_key={{ api_key }}&path=${encodeURIComponent(path)}`)
-                    .then(response => response.text())
-                    .then(html => {
-                        childUl.innerHTML = html;
-                        childUl.style.display = 'block';
-                        li.classList.add('expanded');
-                        el.textContent = '🔽';
-                    })
-                    .catch(err => console.error('자식 폴더 불러오기 실패', err));
-            } else {
-                if (childUl.style.display === 'none' || childUl.style.display === '') {
-                    childUl.style.display = 'block';
-                    li.classList.add('expanded');
-                    el.textContent = '🔽';
-                } else {
-                    childUl.style.display = 'none';
-                    li.classList.remove('expanded');
-                    el.textContent = '▶️';
-                }
-            }
-        }
-
-  
-      function loadFileList(path) {
-        const drive = "{{ drive }}";
-        const api_key = "{{ api_key|urlencode }}";
-        const sort = "{{ sort_param }}";
-        const dir = "{{ sort_dir }}";
-        fetch(`/filelist?drive=${encodeURIComponent(drive)}&api_key=${encodeURIComponent(api_key)}&path=${encodeURIComponent(path)}&sort=${sort}&dir=${dir}`)
-          .then(response => response.text())
-          .then(html => {
-            document.getElementById('file-list').innerHTML = html;
-            // 현재 위치 업데이트
-            document.querySelector('.location-bar h3').textContent = `📂 현재 위치 (드라이브: ${drive.slice(0, -2)}): ${path || '/'}`;
-            
-            // 정렬 버튼 URL 업데이트
-            const sortButtons = document.querySelectorAll('.sort-buttons a');
-            const nameDir = sort === 'name' ? (dir === 'asc' ? 'desc' : 'asc') : 'asc';
-            const dateDir = sort === 'date' ? (dir === 'asc' ? 'desc' : 'asc') : 'asc';
-            const sizeDir = sort === 'size' ? (dir === 'asc' ? 'desc' : 'asc') : 'asc';
-            
-            sortButtons[0].href = `/?drive=${encodeURIComponent(drive)}&path=${encodeURIComponent(path)}&sort=name&dir=${nameDir}&api_key=${encodeURIComponent(api_key)}`;
-            sortButtons[1].href = `/?drive=${encodeURIComponent(drive)}&path=${encodeURIComponent(path)}&sort=date&dir=${dateDir}&api_key=${encodeURIComponent(api_key)}`;
-            sortButtons[2].href = `/?drive=${encodeURIComponent(drive)}&path=${encodeURIComponent(path)}&sort=size&dir=${sizeDir}&api_key=${encodeURIComponent(api_key)}`;
-            
-            // URL 업데이트 (선택 사항)
-            history.pushState(null, '', `/?drive=${encodeURIComponent(drive)}&path=${encodeURIComponent(path)}&sort=${sort}&dir=${dir}&api_key=${encodeURIComponent(api_key)}`);
-          })
-          .catch(err => console.error('파일 목록 로드 실패', err));
-      }
-
-  
-      function goBack() { history.back(); }
-      function goForward() { history.forward(); }
-  
-      // 검색 기능 (디바운스 적용)
-      const searchInput = document.getElementById('searchInput');
-      let searchTimeout;
-      function searchFiles() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(() => {
-          const input = searchInput.value.toLowerCase();
-          document.querySelectorAll('.file-entry').forEach(el => {
-            const name = el.textContent.toLowerCase();
-            el.style.display = name.includes(input) ? 'flex' : 'none';
-          });
-        }, 200);
-      }
-  
-      // 드래그 앤 드롭 업로드 관련 스크립트 (기존 코드와 동일)
-      document.addEventListener('DOMContentLoaded', function() {
-        const dropArea = document.getElementById('drop-area');
-        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-          dropArea.addEventListener(eventName, preventDefaults, false);
-          document.body.addEventListener(eventName, preventDefaults, false);
-        });
-        function preventDefaults(e) {
-          e.preventDefault();
-          e.stopPropagation();
-        }
-        ['dragenter', 'dragover'].forEach(eventName => {
-          dropArea.addEventListener(eventName, () => dropArea.classList.add('highlight'), false);
-        });
-        ['dragleave', 'drop'].forEach(eventName => {
-          dropArea.addEventListener(eventName, () => dropArea.classList.remove('highlight'), false);
-        });
-        dropArea.addEventListener('drop', handleDrop, false);
-        function handleDrop(e) {
-          const dt = e.dataTransfer;
-          const files = dt.files;
-          handleFiles(files);
-        }
-        function handleFiles(files) {
-          ([...files]).forEach(uploadFile);
-        }
-        function uploadFile(file) {
-          const url = '/upload?drive={{ drive }}&api_key={{ api_key }}&path={{ current_path }}';
-          const formData = new FormData();
-          formData.append('file', file);
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', url, true);
-          const progressContainer = document.getElementById('upload-progress');
-          const progressItem = document.createElement('div');
-          progressItem.className = 'progress-item';
-          progressItem.innerHTML = `
-            <div>${file.name} (${formatFileSize(file.size)})</div>
-            <div class="progress-bar"></div>
-          `;
-          progressContainer.appendChild(progressItem);
-          const progressBar = progressItem.querySelector('.progress-bar');
-          xhr.upload.onprogress = function(e) {
-            if (e.lengthComputable) {
-              const percentComplete = (e.loaded / e.total) * 100;
-              progressBar.style.width = percentComplete + '%';
-            }
-          };
-          xhr.onload = function() {
-            if (xhr.status >= 200 && xhr.status < 300) {
-              progressBar.style.width = '100%';
-              progressItem.style.backgroundColor = '#10b981';
-              setTimeout(() => {
-                progressItem.remove();
-                if(progressContainer.children.length === 0) {
-                  // 파일 업로드 후 현재 경로의 파일 목록을 다시 로드
-                  loadFileList("{{ current_path }}");
-                }
-              }, 1000);
-            } else {
-              progressItem.style.backgroundColor = '#ef4444';
-              progressItem.innerHTML += `<div style="color: #ef4444; margin-top: 8px;">업로드 실패: ${xhr.statusText}</div>`;
-              setTimeout(() => progressItem.remove(), 3000);
-            }
-          };
-          xhr.onerror = function() {
-            progressItem.style.backgroundColor = '#ef4444';
-            progressItem.innerHTML += `<div style="color: #ef4444; margin-top: 8px;">네트워크 오류가 발생했습니다.</div>`;
-            setTimeout(() => progressItem.remove(), 3000);
-          };
-          xhr.send(formData);
-        }
-        function formatFileSize(bytes) {
-          if (bytes === 0) return '0 Bytes';
-          const k = 1024;
-          const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB'];
-          const i = Math.floor(Math.log(bytes) / Math.log(k));
-          return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-        }
-        const fileInput = document.querySelector('input[type="file"]');
-        fileInput.addEventListener('change', function() {
-          if (this.files.length > 0) {
-            handleFiles(this.files);
-          }
-        });
-      });
-
-      // --- Double-click preview logic (Modified for Modal) --- START
-      document.getElementById('file-list').addEventListener('dblclick', function(e) {
-        const fileEntry = e.target.closest('.file-entry');
-        if (!fileEntry) return;
-        const isDir = fileEntry.dataset.isDir === 'true';
-        if (isDir) return;
-        const relPath = fileEntry.dataset.relPath;
-        if (!relPath) return;
-
-        const drive = "{{ drive|urlencode }}";
-        const apiKey = "{{ api_key|urlencode }}";
-        const fileName = relPath.split('/').pop(); // Keep original case for display
-        const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
-
-        const videoExts = ['mp4', 'webm', 'ogg', 'mov', 'avi', 'mkv', 'wmv'];
-        const audioExts = ['mp3', 'wav', 'ogg', 'aac', 'flac'];
-        const imageExts = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'svg', 'ico'];
-        const textExts = ['py', 'js', 'html', 'css', 'java', 'c', 'cpp', 'cs', 'php',
-                        'rb', 'go', 'rs', 'swift', 'kt', 'md', 'txt', 'json',
-                        'xml', 'yaml', 'yml', 'ini', 'cfg', 'log', 'sh', 'bat', 'ps1', 'csv'];
-        const pdfExts = ['pdf']; // Add PDF extension
-
-        let previewUrl = null;
-        let previewType = null;
-
-        const encodedRelPath = encodeURIComponent(relPath);
-
-        if (videoExts.includes(fileExt)) {
-          previewType = 'video';
-          previewUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-        } else if (audioExts.includes(fileExt)) {
-          previewType = 'audio';
-          previewUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-        } else if (imageExts.includes(fileExt)) {
-          previewType = 'image';
-          previewUrl = `/preview_image/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-        } else if (textExts.includes(fileExt)) {
-          previewType = 'text';
-          previewUrl = `/preview_text/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-        } else if (pdfExts.includes(fileExt)) { // Handle PDF
-          previewType = 'pdf';
-          previewUrl = `/preview_pdf/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-        }
-
-        if (previewUrl && previewType) {
-          console.log(`Opening ${previewType} preview for ${relPath}: ${previewUrl}`);
-          showPreviewModal(previewType, previewUrl, fileName);
-        }
-      });
-      // --- Double-click preview logic --- END
-
-      // --- Preview Modal Functions --- START
+      // --- Preview Modal Functions (For Preview-Only Files) --- START
       function showPreviewModal(fileType, url, fileName) {
-        // Clear previous content
-        previewContent.innerHTML = '';
-        previewFilename.textContent = fileName;
-
-        let element;
-        if (fileType === 'video') {
-          element = document.createElement('video');
-          element.controls = true;
-          element.autoplay = true;
-          element.style.maxWidth = '90vw';
-          element.style.maxHeight = '80vh';
-          element.src = url;
-        } else if (fileType === 'audio') {
-          element = document.createElement('audio');
-          element.controls = true;
-          element.autoplay = true;
-          element.src = url;
-        } else if (fileType === 'image') {
-          element = document.createElement('img');
-          element.style.maxWidth = '90vw';
-          element.style.maxHeight = '80vh';
-          element.style.display = 'block';
-          element.style.margin = 'auto';
-          element.alt = fileName;
-          element.src = url;
-        } else if (fileType === 'text') {
-          element = document.createElement('iframe');
-          element.style.width = '90vw';
-          element.style.height = '80vh';
-          element.style.border = 'none';
-          element.style.backgroundColor = '#fff'; // Basic background for iframe
-          element.src = url;
-        } else if (fileType === 'pdf') { // Handle PDF with iframe
-          element = document.createElement('iframe');
-          element.style.width = '90vw';
-          element.style.height = '80vh';
-          element.style.border = 'none';
-          element.style.backgroundColor = '#fff'; // Basic background for iframe
-          element.src = url;
-        }
-
-        if (element) {
-          previewContent.appendChild(element);
-          previewOverlay.style.display = 'flex';
-        }
+          if (!previewOverlay || !previewContent || !previewFilename || !previewCloseBtn) { console.error("Preview modal elements missing."); alert("Preview error."); return; }
+          previewContent.innerHTML = '<span class="preview-placeholder">Loading preview...</span>';
+          previewFilename.textContent = fileName;
+          let element;
+          if (fileType === 'video') { element = document.createElement('video'); element.controls = true; element.autoplay = true; element.style.maxWidth = '90vw'; element.style.maxHeight = '80vh'; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Video load failed.</p>'; }; }
+          else if (fileType === 'audio') { element = document.createElement('audio'); element.controls = true; element.autoplay = true; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Audio load failed.</p>'; }; }
+          else if (fileType === 'image') { element = document.createElement('img'); element.style.maxWidth = '90vw'; element.style.maxHeight = '80vh'; element.style.display = 'block'; element.style.margin = 'auto'; element.alt = fileName; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Image load failed.</p>'; }; }
+          else if (fileType === 'text' || fileType === 'pdf') { element = document.createElement('iframe'); element.style.width = '90vw'; element.style.height = '80vh'; element.style.border = 'none'; element.style.backgroundColor = 'var(--card, #fff)'; element.src = url; element.onload = () => console.log("Modal iframe loaded."); element.onerror = () => { previewContent.innerHTML = '<p>Preview load failed.</p>'; }; }
+          if (element) { previewContent.innerHTML = ''; previewContent.appendChild(element); previewOverlay.style.display = 'flex'; }
+          else { console.error("Could not create preview element for type:", fileType); previewContent.innerHTML = '<p>Cannot create preview element.</p>'; previewOverlay.style.display = 'flex'; }
       }
-
-      function closePreviewModal() {
-        previewOverlay.style.display = 'none';
-        // Important: Stop video/audio/iframe content by removing the element source or the element itself
-        previewContent.innerHTML = '';
-        previewFilename.textContent = '';
-      }
-
-      // Close modal when clicking the close button or the overlay background
-      previewCloseBtn.addEventListener('click', closePreviewModal);
-      previewOverlay.addEventListener('click', function(e) {
-        // Only close if the click is directly on the overlay (background), not the content inside
-        if (e.target === previewOverlay) {
-          closePreviewModal();
-        }
-      });
+      function closePreviewModal() { if (!previewOverlay || !previewContent) return; previewOverlay.style.display = 'none'; const media = previewContent.querySelector('video, audio'); if (media) { media.pause(); media.src = ''; } const iframe = previewContent.querySelector('iframe'); if (iframe) iframe.src = 'about:blank'; previewContent.innerHTML = ''; if (previewFilename) previewFilename.textContent = ''; }
+      if (previewCloseBtn) previewCloseBtn.addEventListener('click', closePreviewModal);
+      if (previewOverlay) previewOverlay.addEventListener('click', function(e) { if (e.target === previewOverlay) closePreviewModal(); });
       // --- Preview Modal Functions --- END
 
-      // --- Chat Functionality --- START
-      const chatMessages = document.getElementById('chat-messages');
-      const chatInput = document.getElementById('chat-input');
-      const sendButton = document.getElementById('send-button');
-      const modelSelect = document.getElementById('model-select');
-      const imageUploadButton = document.getElementById('image-upload-button');
-      const imageUploadInput = document.getElementById('image-upload');
-      const imagePreviewArea = document.getElementById('image-preview-area');
-      const imagePreview = document.getElementById('image-preview');
-      const imageFilename = document.getElementById('image-filename');
-      const removeImageButton = document.getElementById('remove-image-button');
-      const micButton = document.getElementById('mic-button');
-      const micStatus = document.getElementById('mic-status');
-      const refreshChatButton = document.getElementById('refresh-chat-button');
+      // --- Global Variables & Initial Setup ---
+      const MAX_HISTORY_LENGTH = 10;
+      const fileChatInstances = {};
+      let instanceCounter = 0;
 
-      // --- Chat History --- START
-      let chatHistory = []; // Stores { role: 'user'/'model', parts: [{ text: '...' }] }
-      const MAX_HISTORY_LENGTH = 20; // 10 turns (user + model)
-      // Store attached image data
-      let attachedImageData = null;
+      // --- DOM Element References (Main Chat) ---
+      const mainChatContainer = document.getElementById('chat-container');
+      const mainChatMessages = document.getElementById('chat-messages');
+      const mainChatInput = document.getElementById('chat-input');
+      const mainSendButton = document.getElementById('send-button');
+      const mainModelSelect = document.getElementById('model-select');
+      const mainImageUploadButton = document.getElementById('image-upload-button');
+      const mainImageUploadInput = document.getElementById('image-upload');
+      const mainImagePreviewArea = document.getElementById('image-preview-area');
+      const mainImagePreview = document.getElementById('image-preview');
+      const mainImageFilename = document.getElementById('image-filename');
+      const mainRemoveImageButton = document.getElementById('remove-image-button');
+      const mainMicButton = document.getElementById('mic-button');
+      const mainMicStatus = document.getElementById('mic-status');
+      const mainRefreshChatButton = document.getElementById('refresh-chat-button');
+      const fileListContainer = document.getElementById('file-list');
 
-      function pruneHistory() {
-          if (chatHistory.length > MAX_HISTORY_LENGTH) {
-              // Remove the oldest two messages (one turn)
-              chatHistory = chatHistory.slice(chatHistory.length - MAX_HISTORY_LENGTH);
-          }
-      }
-      // --- Chat History --- END
+      // --- Main Chat History & State ---
+      let mainChatHistory = [];
+      let mainAttachedImageData = null;
+      let mainMediaRecorder;
+      let mainAudioChunks = [];
+      let isMainRecording = false;
 
-      function addMessageToChat(message, sender, imageUrl = null) {
-        const messageElement = document.createElement('div');
-        messageElement.classList.add('message');
-        messageElement.classList.add(sender === 'user' ? 'user-message' : 'assistant-message');
+      // --- Utility Functions ---
+      function formatFileSize(bytes) { if (bytes === 0) return '0 Bytes'; const k = 1024; const i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['Bytes', 'KB', 'MB', 'GB', 'TB'][i]; }
+      function pruneHistory(historyArray) { const max = MAX_HISTORY_LENGTH * 2; return historyArray.length > max ? historyArray.slice(historyArray.length - max) : historyArray; }
 
-        // Render Markdown for assistant messages, sanitize output
-        if (sender === 'assistant') {
-            // Configure marked to add line breaks for newlines
-            marked.setOptions({
-                breaks: true
-            });
-            const rawHtml = marked.parse(message);
-            messageElement.innerHTML = DOMPurify.sanitize(rawHtml);
-        } else {
-            // For user messages, just set text content
-            messageElement.textContent = message;
-        }
+      // --- Tree Navigation Function ---
+      function toggleChildren(el) { const li = el.parentElement; let ul = li.querySelector('ul'); if (!ul) return; if (ul.innerHTML.trim() === "") { const path = li.querySelector('.folder-link')?.getAttribute('data-path'); if(!path) return; fetch(`/folder_children?drive={{ drive }}&api_key={{ api_key|urlencode }}&path=${encodeURIComponent(path)}`).then(r => r.text()).then(h => { ul.innerHTML = h; ul.style.display = 'block'; li.classList.add('expanded'); el.textContent = '🔽'; }).catch(e => console.error('FC fetch err:', e)); } else { const d = ul.style.display; ul.style.display = (d === 'none' || d === '') ? 'block' : 'none'; li.classList.toggle('expanded', ul.style.display === 'block'); el.textContent = (ul.style.display === 'block') ? '🔽' : '▶️'; } }
 
-        // If it's a user message with an image URL, add image preview
-        if (sender === 'user' && imageUrl) {
-            const imgElement = document.createElement('img');
-            imgElement.src = imageUrl;
-            imgElement.alt = "Attached Image";
-            imgElement.classList.add('attached-image-thumb');
-            messageElement.appendChild(imgElement);
-        }
+      // --- File List Loading Function ---
+      function loadFileList(path) {
+          const drive = "{{ drive }}";
+          const api_key = "{{ api_key|urlencode }}";
+          const params = new URLSearchParams(window.location.search);
+          const sort = params.get('sort') || 'name';
+          const dir = params.get('dir') || 'asc';
+          fetch(`/filelist?drive=${encodeURIComponent(drive)}&api_key=${encodeURIComponent(api_key)}&path=${encodeURIComponent(path)}&sort=${sort}&dir=${dir}`)
+              .then(r => { if (!r.ok) throw new Error(`HTTP error! status: ${r.status}`); return r.text(); })
+              .then(h => {
+                  if (!fileListContainer) { console.error("File list container not found during loadFileList."); return; }
+                  fileListContainer.innerHTML = h;
+                  const loc = document.querySelector('.location-bar h3');
+                  if(loc) loc.textContent = `📂 (${drive.slice(0,-2)}): ${path || '/'}`;
+                  const btns = document.querySelectorAll('.sort-buttons a');
+                  const n=(s,d)=>(s==='name'?(d==='asc'?'desc':'asc'):'asc');
+                  const dt=(s,d)=>(s==='date'?(d==='asc'?'desc':'asc'):'asc');
+                  const sz=(s,d)=>(s==='size'?(d==='asc'?'desc':'asc'):'asc');
+                  if(btns.length===3){
+                      btns[0].href=`/?drive=${drive}&path=${encodeURIComponent(path)}&sort=name&dir=${n(sort,dir)}&api_key=${api_key}`;
+                      btns[1].href=`/?drive=${drive}&path=${encodeURIComponent(path)}&sort=date&dir=${dt(sort,dir)}&api_key=${api_key}`;
+                      btns[2].href=`/?drive=${drive}&path=${encodeURIComponent(path)}&sort=size&dir=${sz(sort,dir)}&api_key=${api_key}`;
+                  }
+                  const currentPath = new URLSearchParams(window.location.search).get('path') || '';
+                   const decodedCurrentPath = decodeURIComponent(currentPath);
+                   // Only push state if the path is actually different to avoid loop on popstate
+                   if (decodedCurrentPath !== path) {
+                      history.pushState({path:path}, '', `/?drive=${drive}&path=${encodeURIComponent(path)}&sort=${sort}&dir=${dir}&api_key=${api_key}`);
+                   }
+              })
+              .catch(e => console.error('FL load failed:', e));
+       }
 
-        chatMessages.appendChild(messageElement);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
+      // --- Browser History Functions ---
+      function goBack() { history.back(); }
+      function goForward() { history.forward(); }
+      window.addEventListener('popstate', (e) => {
+          const p = e.state?.path ?? (new URLSearchParams(location.search).get('path') || '');
+          loadFileList(p); // Reload file list based on history state
+      });
 
-        // Add to history
-        const newHistoryEntry = { role: (sender === 'user' ? 'user' : 'model'), parts: [] };
-        if (message) {
-            newHistoryEntry.parts.push({ text: message });
-        }
-        // For user messages, add image placeholder/url if it existed for this turn
-        // Note: We don't store the full image data in JS history for efficiency.
-        // The backend uses the *currently* uploaded image.
-        if (sender === 'user' && imageUrl) {
-            // Optionally add a marker or the data URL (if small enough and needed for display)
-            // For API context, backend relies on the currently uploaded image + text.
-            // Let's just keep the text part for simplicity in JS history for now,
-            // as the backend reconstructs the prompt correctly.
-            // If context across multiple images becomes necessary, this needs revisiting.
-            ;
-        }
-
-        // Only add if parts is not empty (e.g., avoid empty model responses)
-        if (newHistoryEntry.parts.length > 0) {
-            chatHistory.push(newHistoryEntry);
-            pruneHistory(); // Keep history within limit
-        }
-      }
-
-      // Function to update the last assistant message (for streaming)
-      function updateLastAssistantMessage(textChunk) {
-          let lastMessageElement = chatMessages.querySelector('.assistant-message:last-child');
-
-          // If no last assistant message exists or it already contains final content,
-          // create a new one for the stream.
-          if (!lastMessageElement || lastMessageElement.dataset.streaming !== 'true') {
-              lastMessageElement = document.createElement('div');
-              lastMessageElement.classList.add('message', 'assistant-message');
-              lastMessageElement.dataset.streaming = 'true'; // Mark as streaming
-              chatMessages.appendChild(lastMessageElement);
-          }
-
-          // Append the chunk using Markdown rendering (or simple text)
-          // Note: Appending raw HTML chunk by chunk can be tricky with Markdown.
-          // It might be better to accumulate text and render at the end, or use a library that supports streaming markdown.
-          // For now, let's just append text content for simplicity during streaming.
-          // We can render the full markdown once the stream ends.
-          lastMessageElement.textContent += textChunk;
-
-          // Keep scrolled to bottom
-          chatMessages.scrollTop = chatMessages.scrollHeight;
-      }
-
-      // Function to finalize the last message (render Markdown and add to history)
-      function finalizeLastAssistantMessage() {
-           let lastMessageElement = chatMessages.querySelector('.assistant-message:last-child[data-streaming="true"]');
-           if (lastMessageElement) {
-               delete lastMessageElement.dataset.streaming; // Remove streaming marker
-               const fullText = lastMessageElement.textContent; // Get accumulated text
-
-               // Render final Markdown
-               marked.setOptions({ breaks: true });
-               const rawHtml = marked.parse(fullText);
-               lastMessageElement.innerHTML = DOMPurify.sanitize(rawHtml);
-
-               // Add the complete message to history
-               chatHistory.push({ role: 'model', parts: [{ text: fullText }] });
-               pruneHistory();
-
-               chatMessages.scrollTop = chatMessages.scrollHeight; // Ensure scroll after render
-           }
-      }
-
-      // Modify the fetch call slightly to handle headers conditionally
-      async function sendMessage() {
-        const message = chatInput.value.trim();
-        const selectedModel = modelSelect.value;
-
-        if (!message && !attachedImageData) return; // Don't send if both empty
-
-        console.log("[Debug] sendMessage START - attachedImageData:", attachedImageData);
-
-        // Add user message to chat UI
-        const imagePreviewUrl = attachedImageData ? imagePreview.src : null;
-        addMessageToChat(message || ' ', 'user', imagePreviewUrl); // Send space if only image
-
-        // Prepare payload
-        const payload = createChatPayload(message, selectedModel, chatHistory.slice(0, -1));
-
-        console.log("[Debug] sendMessage AFTER createChatPayload - attachedImageData:", attachedImageData);
-
-        // Clear input and image *after* preparing payload
-        // Keep a reference to the image data for the current request
-        const imageToSend = attachedImageData;
-        chatInput.value = ''; // Clear text input
-        // clearAttachedImage(); // Moved to finally block
-
-        sendButton.disabled = true;
-
-        try {
-          // Add a temporary thinking message
-          addMessageToChat("...", 'assistant');
-          const thinkingMessageElement = chatMessages.lastElementChild;
-
-          const fetchOptions = {
-            method: 'POST',
-            body: payload,
-            // headers property will be added conditionally below
+      // --- Drag & Drop Upload Functions ---
+      function preventDefaults(e){e.preventDefault();e.stopPropagation();}
+      function handleDrop(e){ const dt=e.dataTransfer; const files=dt.files; if(files.length) handleFiles(files); }
+      function handleFiles(files){ [...files].forEach(uploadFile); }
+      function uploadFile(file){
+          const url = `/upload?drive={{ drive }}&api_key={{ api_key|urlencode }}&path={{ current_path }}`; // Ensure current_path is available
+          const fd=new FormData(); fd.append('file',file);
+          const xhr=new XMLHttpRequest(); xhr.open('POST',url,true);
+          const pCont=document.getElementById('upload-progress');
+          const pItem=document.createElement('div'); pItem.className='progress-item';
+          pItem.innerHTML=`<div>${file.name} (${formatFileSize(file.size)})</div><div class="progress-bar"></div>`;
+          if(pCont) pCont.appendChild(pItem);
+          const pBar=pItem.querySelector('.progress-bar');
+          xhr.upload.onprogress=ev=>{if(ev.lengthComputable&&pBar)pBar.style.width=((ev.loaded/ev.total)*100)+'%'};
+          xhr.onload=()=>{
+              if(xhr.status>=200&&xhr.status<300){
+                  if(pBar) pBar.style.width='100%'; pItem.style.backgroundColor='#10b981';
+                  setTimeout(()=>{pItem.remove(); if(pCont&&pCont.children.length===0) loadFileList("{{ current_path }}");}, 1000); // Reload on success
+              } else {
+                  pItem.style.backgroundColor='#ef4444'; pItem.innerHTML+=`<div style="color:var(--danger);margin-top:8px;">Fail: ${xhr.statusText||'Err'}</div>`;
+                  setTimeout(()=>pItem.remove(), 3000);
+              }
           };
-
-          console.log("[Debug] Payload type:", typeof payload);
-
-          // Set Content-Type ONLY for JSON payloads
-          // For FormData, browser sets it automatically including the boundary
-          if (!(payload instanceof FormData)) {
-            console.log("[Debug] Setting Content-Type to application/json");
-            fetchOptions.headers = { 'Content-Type': 'application/json' };
-          }
-          else {
-            console.log("[Debug] Sending as FormData (no explicit Content-Type header)");
-            // No headers property needed, browser handles it
-          }
-
-          console.log("[Debug] Fetch options:", fetchOptions); // Log the final options
-
-          const response = await fetch('/chat', fetchOptions);
-
-          // Remove thinking message
-          if (thinkingMessageElement) {
-             chatMessages.removeChild(thinkingMessageElement);
-          }
-
-          // --- Handle Streaming Response --- START
-          if (response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
-              const reader = response.body.getReader();
-              const decoder = new TextDecoder();
-              let buffer = '';
-              let eventText = ''; // Declare eventText outside the inner loop
-
-              while (true) {
-                  const { value, done } = await reader.read();
-                  if (done) {
-                      console.log("Stream finished.");
-                      finalizeLastAssistantMessage(); // Finalize last message render and history
-                      break;
-                  }
-
-                  buffer += decoder.decode(value, { stream: true });
-
-                  // Process buffer line by line for SSE events
-                  let boundary = buffer.indexOf('\n\n');
-                  while (boundary !== -1) {
-                      eventText = buffer.substring(0, boundary); // Assign to outer variable
-                      buffer = buffer.substring(boundary + 2);
-
-                      if (eventText.startsWith('event: end')) {
-                          console.log("Received end event from server.");
-                          // Server signaled end, finalize might already be called by 'done'
-                          finalizeLastAssistantMessage();
-                          break; // Exit inner loop too
-                      }
-                      if (eventText.startsWith('data: ')) {
-                          const jsonData = eventText.substring(6);
-                          try {
-                              const data = JSON.parse(jsonData);
-                              if (data.response) {
-                                  updateLastAssistantMessage(data.response);
-                              } else if (data.error) {
-                                  console.error("Streaming Error from Server:", data.error);
-                                  updateLastAssistantMessage(`\n[오류: ${data.error}]`);
-                                  // Should we finalize here or let 'done' handle it?
-                                  // Let's finalize to ensure history is saved.
-                                  finalizeLastAssistantMessage();
-                              }
-                          } catch (e) {
-                              console.error("Error parsing SSE data:", e, "Data:", jsonData);
-                          }
-                      }
-                       boundary = buffer.indexOf('\n\n');
-                  }
-                  if (eventText && eventText.startsWith('event: end')) break; // Exit outer loop if end event received
-              }
-          } else { // Handle non-streaming response (e.g., initial error)
-               if (!response.ok) {
-                   let errorMsg = `Error: ${response.statusText}`;
-                   try {
-                       const errorData = await response.json();
-                       errorMsg = `Error: ${errorData.error || response.statusText}`;
-                   } catch (e) { /* Ignore if response is not JSON */ }
-                   addMessageToChat(errorMsg, 'assistant');
-               } else {
-                  // Unexpected non-streaming success?
-                  const data = await response.json();
-                  addMessageToChat(data.response || "(예상치 못한 응답 형식)", 'assistant');
-               }
-          }
-          // --- Handle Streaming Response --- END
-
-        } catch (error) {
-            // Catch network errors or other JS errors during fetch/streaming
-            // Remove thinking message even on network error
-            const thinkingMessageElement = chatMessages.querySelector('.assistant-message:last-child'); // Find it again
-            if (thinkingMessageElement && thinkingMessageElement.textContent === '...') {
-                chatMessages.removeChild(thinkingMessageElement);
-            }
-            console.error('Chat Error:', error);
-            addMessageToChat('오류가 발생했습니다. 다시 시도해주세요.', 'assistant');
-        } finally {
-            // Clear the image AFTER the request is complete (success or error)
-            clearAttachedImage();
-            sendButton.disabled = false; // Re-enable button
-        }
+          xhr.onerror=()=>{
+              pItem.style.backgroundColor='#ef4444'; pItem.innerHTML+=`<div style="color:var(--danger);margin-top:8px;">Net Err.</div>`;
+              setTimeout(()=>pItem.remove(), 3000);
+          };
+          xhr.send(fd);
       }
 
-      // Event listeners
-      sendButton.addEventListener('click', sendMessage);
-      chatInput.addEventListener('keypress', function(event) {
-        if (event.key === 'Enter') {
-          // Prevent sending if shift+enter is pressed (for potential multiline input later)
-          if (!event.shiftKey) {
-            sendMessage();
-            event.preventDefault(); // Prevent default newline in input
-          }
-        }
-      });
-      // Image Upload listeners
-      imageUploadButton.addEventListener('click', () => {
-          if (isRecording) return; // Prevent action while recording
-          imageUploadInput.click(); // Trigger hidden file input
-      });
+      // --- Main Chat Event Listeners Setup Function ---
+       function setupMainChatListeners() {
+          if(mainSendButton) mainSendButton.addEventListener('click', () => sendMessage());
+          if(mainChatInput) mainChatInput.addEventListener('keypress', (e) => { if (e.key === 'Enter' && !e.shiftKey) { sendMessage(); e.preventDefault(); } });
+          if(mainImageUploadButton) mainImageUploadButton.addEventListener('click', () => { if (mainMicButton?.classList.contains('recording')) return; mainImageUploadInput?.click(); });
+          if(mainImageUploadInput) mainImageUploadInput.addEventListener('change', handleMainImageFileSelect);
+          if(mainRemoveImageButton) mainRemoveImageButton.addEventListener('click', clearMainAttachedImage);
+          if(mainRefreshChatButton) mainRefreshChatButton.addEventListener('click', clearMainChat);
+          if (mainMicButton) mainMicButton.addEventListener('click', toggleMainRecording);
+      }
 
-      imageUploadInput.addEventListener('change', handleImageFileSelect);
-      removeImageButton.addEventListener('click', clearAttachedImage);
+      // --- Chat Functionality (Common & Main) ---
+      function addMessageToChat(message, sender, chatElements, imageUrl = null, historyArray = null) { if (!chatElements?.messages) { console.error("addMsg: No messages element"); return; } const el = document.createElement('div'); el.classList.add('message', sender==='user'?'user-message':'assistant-message'); if (sender==='assistant') { marked.setOptions({breaks:true}); el.innerHTML=DOMPurify.sanitize(marked.parse(message)); } else { el.textContent=message; } if (sender==='user' && imageUrl) { const img=document.createElement('img'); img.src=imageUrl; img.alt="Attached"; img.classList.add('attached-image-thumb'); el.appendChild(img); } chatElements.messages.appendChild(el); requestAnimationFrame(()=>{if(chatElements.messages.offsetHeight>0) chatElements.messages.scrollTop=chatElements.messages.scrollHeight;}); if(historyArray){ const entry={role:(sender==='user'?'user':'model'),parts:[]}; if(message) entry.parts.push({text:message}); if(entry.parts.length>0){ historyArray.push(entry); const pruned=pruneHistory(historyArray); if(pruned!==historyArray){ historyArray.length=0; historyArray.push(...pruned); }}} }
+      function updateLastAssistantMessage(textChunk, chatElements) { if (!chatElements?.messages) return; let last=chatElements.messages.querySelector('.assistant-message:last-child'); if(!last || last.dataset.streaming !== 'true'){ last=document.createElement('div'); last.className='message assistant-message'; last.dataset.streaming='true'; chatElements.messages.appendChild(last); } last.textContent += textChunk; requestAnimationFrame(()=>{if(chatElements.messages.offsetHeight>0) chatElements.messages.scrollTop=chatElements.messages.scrollHeight;}); }
+      function finalizeLastAssistantMessage(chatElements, historyArray) { if (!chatElements?.messages) return; let last=chatElements.messages.querySelector('.assistant-message:last-child[data-streaming="true"]'); if(last){ delete last.dataset.streaming; const txt=last.textContent; marked.setOptions({breaks:true}); last.innerHTML=DOMPurify.sanitize(marked.parse(txt)); if(historyArray&&txt){ const lastH=historyArray[historyArray.length-1]; if(!lastH || !(lastH.role==='model'&&lastH.parts[0]?.text===txt)){ historyArray.push({role:'model',parts:[{text:txt}]}); const pruned=pruneHistory(historyArray); if(pruned!==historyArray){ historyArray.length=0; historyArray.push(...pruned); }}} requestAnimationFrame(()=>{if(chatElements.messages.offsetHeight>0) chatElements.messages.scrollTop=chatElements.messages.scrollHeight;}); } }
 
-      // --- Audio Recording Logic --- START
-      let mediaRecorder;
-      let audioChunks = [];
-      let isRecording = false;
+      async function sendMessage(instanceId = null) {
+          let chatInstance, chatElements = {}, historyArray, currentImgRef, relPath = null;
+          let isFileChat = instanceId !== null && fileChatInstances[instanceId];
+          let instanceType = isFileChat ? fileChatInstances[instanceId].type : null; // 'media' or 'document' or null
 
-      micButton.addEventListener('click', toggleRecording);
-
-      async function toggleRecording() {
-          if (isRecording) {
-              // Stop recording
-              mediaRecorder.stop();
-              isRecording = false;
-              micButton.classList.remove('recording');
-              micButton.disabled = true; // Disable while processing
-              micStatus.textContent = '처리 중...';
+          // --- Determine context (Main Chat vs File Chat) ---
+          if (isFileChat) {
+              chatInstance = fileChatInstances[instanceId];
+              chatElements = chatInstance.elements;
+              historyArray = chatInstance.history;
+              relPath = chatInstance.relPath;
+              // currentImgRef = chatInstance; // We don't use the temporary attached image for file chat
           } else {
-              // Start recording
-              try {
-                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-                  mediaRecorder = new MediaRecorder(stream);
-
-                  mediaRecorder.ondataavailable = event => {
-                      audioChunks.push(event.data);
-                  };
-
-                  mediaRecorder.onstop = async () => {
-                      const audioBlob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' }); // Or detect type
-                      audioChunks = []; // Reset chunks
-                      stream.getTracks().forEach(track => track.stop()); // Release microphone
-                      await sendAudioData(audioBlob);
-                      micButton.disabled = false; // Re-enable after processing
-                      micStatus.textContent = ''; // Clear status
-                  };
-
-                  mediaRecorder.start();
-                  isRecording = true;
-                  micButton.classList.add('recording');
-                  micStatus.textContent = '녹음 중...';
-                  // Disable other inputs while recording
-                  chatInput.disabled = true;
-                  sendButton.disabled = true;
-                  imageUploadButton.disabled = true;
-
-              } catch (err) {
-                  console.error("마이크 접근 오류:", err);
-                  micStatus.textContent = '마이크 오류';
-                  alert(`마이크 접근에 실패했습니다: ${err.message}`);
-              }
+              // Main chat context
+              chatElements = {
+                  input: mainChatInput, sendButton: mainSendButton, modelSelect: mainModelSelect, messages: mainChatMessages,
+                  imagePreviewArea: mainImagePreviewArea, imagePreview: mainImagePreview, imageFilename: mainImageFilename,
+                  removeImageButton: mainRemoveImageButton, imageUploadButton: mainImageUploadButton, imageUploadInput: mainImageUploadInput,
+                  micButton: mainMicButton, micStatus: mainMicStatus
+              };
+              historyArray = mainChatHistory;
+              currentImgRef = { get attachedImageData() { return mainAttachedImageData; }, set attachedImageData(v) { mainAttachedImageData = v; } };
           }
-      }
 
-      async function sendAudioData(audioBlob) {
-          const selectedModel = modelSelect.value;
-          const formData = new FormData();
-          formData.append('audio', audioBlob, 'recorded_audio.ogg'); // Add filename
-          formData.append('model', selectedModel);
+          // --- Validate required elements ---
+          if (!chatElements.input || !chatElements.modelSelect || !chatElements.sendButton || !chatElements.messages) {
+              console.error("sendMessage Error: Missing critical chat elements for", instanceId || "main chat", chatElements);
+              if(chatElements.sendButton) chatElements.sendButton.disabled = false;
+              if(chatElements.micButton) chatElements.micButton.disabled = false; // Check existence
+              return;
+          }
 
-          addMessageToChat("(음성 입력 전송됨)", 'user'); // Placeholder message
+          const msg = chatElements.input.value.trim();
+          const model = chatElements.modelSelect.value;
+
+          // --- Check if message is empty (allow sending if image is attached in MAIN chat) ---
+          let mainChatImageAttached = !isFileChat && currentImgRef?.attachedImageData;
+          if (!msg && !mainChatImageAttached && !isFileChat) {
+              // Only return if message is empty AND it's the main chat without an image attached
+              // File chat always proceeds to send the inherent image
+              console.log("Empty message in main chat, returning.");
+              return;
+          }
+
+          // --- Display User Message ---
+          // For main chat, display attached image preview if present
+          const userDisplayImageUrl = mainChatImageAttached ? chatElements.imagePreview.src : null;
+          addMessageToChat(msg || ' ', 'user', chatElements, userDisplayImageUrl, historyArray);
+
+          // --- Prepare Payload ---
+          let payload;
+          let fetchOpts = { method: 'POST' };
+
+          // --- Disable buttons and clear input --- START
+          chatElements.sendButton.disabled = true;
+          if(chatElements.micButton) chatElements.micButton.disabled = true;
+          if(chatElements.input) chatElements.input.value = ''; // Clear input after getting value
+
+          if (mainChatImageAttached) {
+              clearMainAttachedImage(); // Clear main preview
+          } else if (isFileChat && chatElements.imagePreviewArea && instanceType === 'media') {
+              // Only clear attached image preview for media file chats if one was temporarily attached (unlikely current flow)
+              clearAttachedImage(instanceId);
+          }
+          // --- Disable buttons and clear input --- END
 
           try {
-              addMessageToChat("...", 'assistant');
-              const thinkingMessageElement = chatMessages.lastElementChild;
+              addMessageToChat("...".padStart(3), 'assistant', chatElements, null, null); // Thinking indicator (don't add to history)
+              const thinking = chatElements.messages.lastElementChild;
 
-              const response = await fetch('/chat_audio', {
+              if (isFileChat && instanceType === 'media' && relPath) {
+                  // FILE CHAT (MEDIA): Always send image + message + history via FormData
+                  console.log(`File chat (Media - ${instanceId}): Fetching image blob for ${relPath}`);
+                  // Fetch the image Blob asynchronously
+                  const drive = "{{ drive|urlencode }}";
+                  const apiKey = "{{ api_key|urlencode }}";
+                  const imageUrl = `/download?drive=${drive}&path=${encodeURIComponent(relPath)}&api_key=${apiKey}`;
+                  const imageResponse = await fetch(imageUrl);
+                  if (!imageResponse.ok) throw new Error(`Failed to fetch image for chat: ${imageResponse.statusText}`);
+                  const imageBlob = await imageResponse.blob();
+
+                  payload = new FormData();
+                  payload.append('message', msg || '');
+                  payload.append('model', model);
+                  payload.append('history', JSON.stringify(historyArray.slice(0, -1))); // Send history *before* the current user msg
+                  payload.append('image', imageBlob, fileChatInstances[instanceId].fileName); // Add the fetched image blob
+
+                  fetchOpts.body = payload; // Set FormData as body
+                  // Browser sets Content-Type automatically for FormData
+
+              } else if (isFileChat && instanceType === 'document') {
+                  // FILE CHAT (DOCUMENT): Send message + history + instanceId via JSON
+                  console.log(`File chat (Document - ${instanceId}): Sending JSON payload.`);
+                  payload = JSON.stringify({
+                      message: msg || '',
+                      model: model,
+                      history: historyArray.slice(0, -1), // Send history *before* current user msg
+                      instanceId: instanceId // <<< Include instanceId for RAG lookup
+                  });
+                  fetchOpts.body = payload;
+                  fetchOpts.headers = { 'Content-Type': 'application/json' };
+
+              } else {
+                  // MAIN CHAT: Send JSON or FormData based on attached image
+                  const mainImageData = currentImgRef?.attachedImageData;
+                  if (mainImageData) {
+                      payload = new FormData();
+                      payload.append('message', msg || '');
+                      payload.append('model', model);
+                      payload.append('history', JSON.stringify(historyArray.slice(0, -1)));
+                      payload.append('image', mainImageData);
+                      fetchOpts.body = payload;
+                      // Browser sets Content-Type automatically
+                  } else {
+                      payload = JSON.stringify({ message: msg, model: model, history: historyArray.slice(0, -1) });
+                      fetchOpts.body = payload;
+                      fetchOpts.headers = { 'Content-Type': 'application/json' };
+                  }
+                  currentImgRef.attachedImageData = null; // Clear main attached image data after preparing payload
+              }
+
+              // --- Make API Call ---
+              console.log(`Sending chat request. IsFileChat: ${isFileChat}`, fetchOpts);
+              const res = await fetch('/chat', fetchOpts);
+
+              // --- Process Response ---
+              if (thinking && chatElements.messages.contains(thinking)) chatElements.messages.removeChild(thinking);
+
+              if (res.ok && res.headers.get('Content-Type')?.includes('text/event-stream')) {
+                  const r = res.body.getReader();
+                  const dec = new TextDecoder();
+                  let buf = '', evTxt = '';
+                  while (true) {
+                      const { value, done } = await r.read();
+                      if (done) { finalizeLastAssistantMessage(chatElements, historyArray); break; }
+                      buf += dec.decode(value, { stream: true });
+                      let b = buf.indexOf('\n\n');
+                      while (b !== -1) {
+                          evTxt = buf.substring(0, b); buf = buf.substring(b + 2);
+                          if (evTxt.startsWith('event: end')) { finalizeLastAssistantMessage(chatElements, historyArray); break; }
+                          if (evTxt.startsWith('data: ')) {
+                              const j = evTxt.substring(6); try { const d = JSON.parse(j);
+                                  if (d.response) updateLastAssistantMessage(d.response, chatElements);
+                                  else if (d.error) { updateLastAssistantMessage(`\n[ERR: ${d.error}]`, chatElements); finalizeLastAssistantMessage(chatElements, historyArray); }
+                              } catch (e) { console.error("SSE err:", e, "Data:", j); }
+                          }
+                          b = buf.indexOf('\n\n');
+                      } if (evTxt && evTxt.startsWith('event: end')) break;
+                  }
+              } else {
+                  // Handle non-streaming error
+                  let eMsg = `Err: ${res.statusText}`;
+                  try { const ed = await res.json(); eMsg = `Err: ${ed.error || res.statusText}`; } catch (e) { }
+                  addMessageToChat(eMsg, 'assistant', chatElements, null, historyArray);
+              }
+          } catch (err) {
+              // --- Handle Fetch/Processing Errors ---
+              const t = chatElements.messages?.querySelector('.assistant-message:last-child');
+              if (t && t.textContent === '...' && chatElements.messages.contains(t)) chatElements.messages.removeChild(t);
+              console.error('Chat Err:', err);
+              addMessageToChat(`Error occurred: ${err.message}`, 'assistant', chatElements, null, historyArray);
+          } finally {
+              // --- Re-enable buttons ---
+              if(chatElements.sendButton) chatElements.sendButton.disabled = false;
+              if(chatElements.micButton) chatElements.micButton.disabled = false; // Check existence
+              // Clear main attached image explicitly (redundant but safe)
+              if (!isFileChat && currentImgRef) currentImgRef.attachedImageData = null;
+          }
+      }
+
+      // Image Handling (Main & File Specific)
+      function handleMainImageFileSelect(e){const f=e.target.files[0];if(f&&f.type.startsWith('image/')){mainAttachedImageData=f;const r=new FileReader();r.onload=ev=>{if(mainImagePreview)mainImagePreview.src=ev.target.result;if(mainImageFilename)mainImageFilename.textContent=f.name;if(mainImagePreviewArea)mainImagePreviewArea.style.display='flex';};r.readAsDataURL(f);}else{clearMainAttachedImage();if(f)alert('Images only.');}if(mainImageUploadInput)mainImageUploadInput.value=null;}
+      function clearMainAttachedImage(){mainAttachedImageData=null;if(mainImagePreview)mainImagePreview.src='#';if(mainImageFilename)mainImageFilename.textContent='';if(mainImagePreviewArea)mainImagePreviewArea.style.display='none';if(mainImageUploadInput)mainImageUploadInput.value=null;}
+      function handleFileImageSelect(e,id){const i=fileChatInstances[id];if(!i?.elements.imagePreviewArea||!i?.elements.imagePreview)return;const f=e.target.files[0];if(f&&f.type.startsWith('image/')){i.attachedImageData=f;const r=new FileReader();r.onload=ev=>{i.elements.imagePreview.src=ev.target.result;if(i.elements.imageFilename)i.elements.imageFilename.textContent=f.name;i.elements.imagePreviewArea.style.display='flex';};r.readAsDataURL(f);}else{clearAttachedImage(id);if(f)alert('Images only.');}if(e.target)e.target.value=null;}
+      function clearAttachedImage(id){const i=fileChatInstances[id];if(i){i.attachedImageData=null;if(i.elements.imagePreview)i.elements.imagePreview.src='#';if(i.elements.imageFilename)i.elements.imageFilename.textContent='';if(i.elements.imagePreviewArea)i.elements.imagePreviewArea.style.display='none';if(i.elements.imageUploadInput)i.elements.imageUploadInput.value=null;}}
+      // Audio Handling (Main Chat Only For Now)
+      async function toggleMainRecording(){if(!mainMicButton)return;if(isMainRecording){mainMediaRecorder?.stop();isMainRecording=false;mainMicButton.classList.remove('recording');mainMicButton.disabled=true;if(mainMicStatus)mainMicStatus.textContent='Processing...';}else{try{const s=await navigator.mediaDevices.getUserMedia({audio:true});mainMediaRecorder=new MediaRecorder(s);mainAudioChunks=[];mainMediaRecorder.ondataavailable=e=>mainAudioChunks.push(e.data);mainMediaRecorder.onstop=async()=>{const b=new Blob(mainAudioChunks,{type:'audio/ogg; codecs=opus'});mainAudioChunks=[];s.getTracks().forEach(t=>t.stop());await sendAudioData(b);mainMicButton.disabled=false;if(mainMicStatus)mainMicStatus.textContent='';};mainMediaRecorder.start();isMainRecording=true;mainMicButton.classList.add('recording');if(mainMicStatus)mainMicStatus.textContent='Recording...';if(mainChatInput)mainChatInput.disabled=true;if(mainSendButton)mainSendButton.disabled=true;if(mainImageUploadButton)mainImageUploadButton.disabled=true;}catch(err){console.error("Mic err:",err);if(mainMicStatus)mainMicStatus.textContent='Mic Error';alert(`Mic fail: ${err.message}`);isMainRecording=false;mainMicButton?.classList.remove('recording');if(mainChatInput)mainChatInput.disabled=false;if(mainSendButton)mainSendButton.disabled=false;if(mainImageUploadButton)mainImageUploadButton.disabled=false;if(mainMicButton)mainMicButton.disabled=false;}}}
+      async function sendAudioData(blob){if(!mainModelSelect)return;const m=mainModelSelect.value;const fd=new FormData();fd.append('audio',blob,'rec.ogg');fd.append('model',m);const els={messages:mainChatMessages};addMessageToChat("(Audio sent)",'user',els,null,mainChatHistory);try{addMessageToChat("...",'assistant',els,null,mainChatHistory);const t=els.messages.lastElementChild;const r=await fetch('/chat_audio',{method:'POST',body:fd});if(t&&els.messages.contains(t))els.messages.removeChild(t);if(!r.ok){let msg=`Aud Err: ${r.statusText}`;try{const d=await r.json();msg=`Aud Err: ${d.error||r.statusText}`; }catch(e){}addMessageToChat(msg,'assistant',els,null,mainChatHistory);}else{const d=await r.json();addMessageToChat(d.response,'assistant',els,null,mainChatHistory);}}catch(err){const t=els.messages?.querySelector('.assistant-message:last-child');if(t&&t.textContent==='...'&&els.messages.contains(t))els.messages.removeChild(t);console.error('Aud Chat Err:',err);addMessageToChat('Audio proc err.','assistant',els,null,mainChatHistory);}finally{if(mainChatInput)mainChatInput.disabled=false;if(mainSendButton)mainSendButton.disabled=false;if(mainImageUploadButton)mainImageUploadButton.disabled=false;if(mainMicButton)mainMicButton.disabled=false;if(mainMicStatus)mainMicStatus.textContent='';}}
+      // Main Chat Refresh
+      function clearMainChat(){console.log("Clearing main chat...");if(mainChatMessages)mainChatMessages.innerHTML='';mainChatHistory=[];clearMainAttachedImage();if(mainChatInput)mainChatInput.value='';const els={messages:mainChatMessages};if(mainChatMessages)addMessageToChat("안녕하세요!",'assistant',els);if(mainSendButton)mainSendButton.disabled=false;if(mainImageUploadButton)mainImageUploadButton.disabled=false;if(mainChatInput)mainChatInput.disabled=false;if(mainMicButton){mainMicButton.disabled=false;if(isMainRecording){mainMediaRecorder?.stop();isMainRecording=false;mainMicButton.classList.remove('recording');}}if(mainMicStatus)mainMicStatus.textContent='';}
+
+      // --- New Preview+Chat Instance Logic --- START
+      function createPreviewChatInstance(instanceId, fileName, relPath, type) {
+          console.log(`Creating instance ${instanceId} for ${fileName}`);
+          const instanceDiv = document.createElement('div'); instanceDiv.id = instanceId; instanceDiv.className = 'preview-chat-instance';
+          const header = document.createElement('div'); header.className = 'preview-chat-header';
+          const title = document.createElement('span'); title.className = 'preview-chat-filename'; title.textContent = fileName; title.title = relPath;
+          const closeBtn = document.createElement('button'); closeBtn.className = 'preview-chat-close-btn'; closeBtn.innerHTML = '&times;'; closeBtn.title = 'Close'; closeBtn.onclick = () => closePreviewChatInstance(instanceId);
+          header.appendChild(title); header.appendChild(closeBtn);
+          const contentDiv = document.createElement('div'); contentDiv.className = 'preview-chat-content';
+          const previewArea = document.createElement('div'); previewArea.className = 'preview-area';
+          const chatArea = document.createElement('div'); chatArea.className = 'chat-area'; chatArea.style.cssText='display:flex;flex-direction:column;height:100%;overflow:hidden;';
+
+          const clonedElements = {
+              previewArea: previewArea,
+              modelSelect:null, messages:null, imagePreviewArea:null, imagePreview:null, imageFilename:null, removeImageButton:null, micStatus:null, inputArea:null, imageUploadButton:null, imageUploadInput:null, micButton:null, input:null, sendButton:null
+          };
+
+          const cloneConfig = [
+              { mainParentSelector:'.model-selector', elementSelector:'select', cloneId:'modelSelect' },
+              { createNew:'div', cloneId:'messages', newClass:'chat-messages', initialContent:true },
+              { mainId:'image-preview-area', cloneId:'imagePreviewArea', elementType:'div', handleSubElements:true },
+              { mainId:'mic-status', cloneId:'micStatus', elementType:'span', newClass:'mic-status' },
+              { mainId:'chat-input-area', cloneId:'inputArea', elementType:'div', handleSubElements:true }
+          ];
+
+          cloneConfig.forEach(cfg => { let cloned=null; let mainE=cfg.mainId?document.getElementById(cfg.mainId):null; let mainP=cfg.mainParentSelector?mainChatContainer?.querySelector(cfg.mainParentSelector):null; if(cfg.createNew){ cloned=document.createElement(cfg.createNew); cloned.id=`${instanceId}-${cfg.cloneId}`; if(cfg.newClass)cloned.className=cfg.newClass; clonedElements[cfg.cloneId]=cloned; if(cfg.initialContent&&cfg.cloneId==='messages')addMessageToChat("파일 질문:",'assistant',{messages:cloned}); } else if(mainP){ cloned=mainP.cloneNode(true); const elIn=cloned.querySelector(cfg.elementSelector); if(elIn){ elIn.id=`${instanceId}-${cfg.mainId||cfg.cloneId}`; clonedElements[cfg.cloneId]=elIn; } else console.warn(`Elem ${cfg.elementSelector} not in ${cfg.mainParentSelector}`); } else if(mainE){ cloned=mainE.cloneNode(true); cloned.id=`${instanceId}-${cfg.mainId}`; clonedElements[cfg.cloneId]=cloned; if(cfg.newClass)cloned.className=cfg.newClass; if(cfg.handleSubElements){ if(cfg.cloneId==='imagePreviewArea'){ cloned.style.display='none'; const img=cloned.querySelector('#image-preview'); if(img){img.id=`${instanceId}-image-preview`;clonedElements.imagePreview=img;} const span=cloned.querySelector('#image-filename'); if(span){span.id=`${instanceId}-image-filename`;clonedElements.imageFilename=span;} const btn=cloned.querySelector('#remove-image-button'); if(btn){btn.id=`${instanceId}-remove-image-button`;btn.onclick=()=>clearAttachedImage(instanceId);clonedElements.removeImageButton=btn;} } else if(cfg.cloneId==='inputArea'){ const fileInput=document.createElement('input'); fileInput.type='file';fileInput.id=`${instanceId}-image-upload`;fileInput.accept='image/*';fileInput.style.display='none'; fileInput.onchange=(e)=>handleFileImageSelect(e,instanceId); clonedElements.imageUploadInput=fileInput; cloned.insertBefore(fileInput,cloned.firstChild); const imgBtn=cloned.querySelector('#image-upload-button'); if(imgBtn){imgBtn.id=`${instanceId}-image-upload-button`;imgBtn.onclick=()=>fileInput.click();clonedElements.imageUploadButton=imgBtn;} const micBtn=cloned.querySelector('#mic-button'); if(micBtn){micBtn.id=`${instanceId}-mic-button`;micBtn.disabled=true;micBtn.title="Audio(File Disabled)";clonedElements.micButton=micBtn;} const inputEl=cloned.querySelector('#chat-input'); if(inputEl){inputEl.id=`${instanceId}-chat-input`;inputEl.onkeypress=(e)=>{if(e.key==='Enter'&&!e.shiftKey){sendMessage(instanceId);e.preventDefault();}};clonedElements.input=inputEl;} const sendBtn=cloned.querySelector('#send-button'); if(sendBtn){sendBtn.id=`${instanceId}-send-button`;sendBtn.onclick=()=>sendMessage(instanceId);clonedElements.sendButton=sendBtn;} } } } else console.warn("Clone failed:",cfg); if(cloned)chatArea.appendChild(cloned); });
+
+          if(chatArea.children.length===0){console.warn(`Chat area ${instanceId} empty.`);chatArea.innerHTML='<p style="padding:15px;text-align:center;">Chat UI load failed.</p>';}
+
+          // <<< Remove Mic Button from cloned input area >>>
+          const clonedInputArea = chatArea.querySelector(`#${instanceId}-inputArea`);
+          const clonedMicButton = clonedInputArea?.querySelector(`#${instanceId}-mic-button`);
+          if (clonedInputArea && clonedMicButton) {
+              clonedInputArea.removeChild(clonedMicButton);
+              if (clonedElements.micButton) delete clonedElements.micButton; // Remove reference
+              if (clonedElements.micStatus) {
+                    const clonedMicStatus = chatArea.querySelector(`#${instanceId}-mic-status`);
+                    if(clonedMicStatus) chatArea.removeChild(clonedMicStatus);
+                    delete clonedElements.micStatus; // Remove reference
+              }
+              console.log(`Removed mic button and status for instance ${instanceId}`);
+          }
+
+          contentDiv.appendChild(previewArea);
+          contentDiv.appendChild(chatArea);
+
+          instanceDiv.appendChild(header);
+          instanceDiv.appendChild(contentDiv);
+          document.body.appendChild(instanceDiv);
+
+          fileChatInstances[instanceId] = { fileName: fileName, relPath: relPath, elements: clonedElements, history: [], attachedImageData: null, type: type };
+          if(clonedElements.messages?.children.length>0){ const initMsg=clonedElements.messages.children[0]?.textContent; if(initMsg)fileChatInstances[instanceId].history.push({role:'assistant',parts:[{text:initMsg}]}); }
+
+          console.log(`Created instance: ${instanceId}`, fileChatInstances[instanceId]);
+          loadPreviewContent(instanceId, relPath, fileName);
+      }
+
+      function closePreviewChatInstance(instanceId) {
+          const instanceData = fileChatInstances[instanceId];
+
+          if (instanceData) {
+              const chatElements = instanceData.elements;
+              const instanceType = instanceData.type;
+
+              // Clear media elements if they exist
+              const pA = chatElements?.previewArea;
+              if(pA){const v=pA.querySelector('video,audio');if(v){v.pause();v.src='';}const i=pA.querySelector('iframe');if(i)i.src='about:blank';}
+
+              // Remove the instance Div from the DOM
+              const iD=document.getElementById(instanceId); if(iD)iD.remove(); else console.warn(`Instance div ${instanceId} not found`);
+
+              // <<< If it was a document instance, clear the backend cache >>>
+              if (instanceType === 'document') {
+                  console.log(`Clearing backend cache for document instance: ${instanceId}`);
+                  const apiKey = "{{ api_key|urlencode }}";
+                  fetch('/clear_document_cache', {
+                      method: 'POST',
+                      headers: {
+                          'Content-Type': 'application/json',
+                          'X-Api-Key': apiKey // Send API key in header
+                      },
+                      body: JSON.stringify({ instanceId: instanceId })
+                  })
+                  .then(response => {
+                      if (!response.ok) {
+                          console.error(`Failed to clear cache for ${instanceId}. Status: ${response.status}`);
+                          response.json().then(err => console.error("Cache clear error:", err.error)).catch(() => {});
+                      } else {
+                          console.log(`Backend cache cleared successfully for ${instanceId}`);
+                      }
+                  })
+                  .catch(error => {
+                      console.error(`Error calling /clear_document_cache for ${instanceId}:`, error);
+                  });
+              }
+
+              // Delete the instance data from the frontend store
+              delete fileChatInstances[instanceId]; console.log(`Closed instance: ${instanceId}`);
+          } else {
+              console.warn(`Attempted to close non-existent instance: ${instanceId}`);
+          }
+      }
+
+      function loadPreviewContent(instanceId, relPath, fileName) {
+          const instance = fileChatInstances[instanceId];
+          if (!instance || !instance.elements?.previewArea) {
+              console.error(`Preview load ERROR: Instance ${instanceId} or previewArea element missing in instance data.`);
+              const paDiv = document.getElementById(instanceId)?.querySelector('.preview-area');
+              if(paDiv) paDiv.innerHTML = '<span class="preview-placeholder">Error loading preview (Instance Data Missing).</span>';
+              return;
+          }
+          const previewArea = instance.elements.previewArea;
+          previewArea.innerHTML='<span class="preview-placeholder">Loading...</span>';
+
+          const drv="{{ drive|urlencode }}"; const key="{{ api_key|urlencode }}";
+          const ext=fileName.includes('.')?fileName.split('.').pop().toLowerCase():'';
+          const vE=['mp4','webm','ogg','mov','avi','mkv','wmv','mpg','flv','3gpp'], aE=['mp3','wav','ogg','aac','flac'], iE=['jpg','jpeg','png','gif','bmp','webp','svg','ico'], tE=['py','js','html','css','java','c','cpp','cs','php','rb','go','rs','swift','kt','md','txt','json','xml','yaml','yml','ini','cfg','log','sh','bat','ps1','csv'], pE=['pdf'];
+          let pUrl=null, pType=null;
+          const encP=encodeURIComponent(relPath);
+
+          if(vE.includes(ext)){pType='video';pUrl=`/stream/${encP}?drive=${drv}&api_key=${key}`;}else if(aE.includes(ext)){pType='audio';pUrl=`/stream/${encP}?drive=${drv}&api_key=${key}`;}else if(iE.includes(ext)){pType='image';pUrl=`/preview_image/${encP}?drive=${drv}&api_key=${key}`;}else if(tE.includes(ext)){pType='text';pUrl=`/preview_text/${encP}?drive=${drv}&api_key=${key}`;}else if(pE.includes(ext)){pType='pdf';pUrl=`/preview_pdf/${encP}?drive=${drv}&api_key=${key}`;} else { pType = 'unsupported'; }
+
+          let el;
+          if (pType !== 'unsupported') {
+              console.log(`Loading ${pType} preview for ${relPath} (${fileName}) in ${instanceId}`);
+              if (pType==='video' && pUrl){ el=document.createElement('video');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Video failed.</span>';}; }
+              else if (pType==='audio' && pUrl){ el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Audio failed.</span>';}; }
+              else if (pType==='image' && pUrl){ el=document.createElement('img');el.alt=fileName;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Image failed.</span>';}; }
+              else if ((pType==='text' || pType==='pdf') && pUrl){ el=document.createElement('iframe');el.style.cssText='width:100%;height:100%;border:none;';el.src=pUrl;el.onload=()=>console.log(`Iframe ${pType} loaded.`);el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Preview failed.</span>';}; }
+
+              if(el){ previewArea.innerHTML=''; previewArea.appendChild(el); }
+              else { previewArea.innerHTML='<span class="preview-placeholder">Preview generation failed.</span>'; console.warn(`Preview element generation failed for type ${pType}, URL: ${pUrl}`); }
+          } else {
+              previewArea.innerHTML='<span class="preview-placeholder">Preview not supported for this file type.</span>';
+              console.log(`Preview not supported for extension: ${ext}`);
+          }
+      }
+      function closeAllPreviewChatInstances() { Object.keys(fileChatInstances).forEach(id => closePreviewChatInstance(id)); }
+      // --- New Preview+Chat Instance Logic --- END
+
+      // --- Initialize after DOM is ready ---
+      document.addEventListener('DOMContentLoaded', function() {
+          // --- Define Event Handlers within DOMContentLoaded ---
+          // (These need to be defined before they are attached below)
+          function handleTreeClick(e) {
+              let target = e.target;
+              if (target.tagName.toLowerCase() === 'a' && target.classList.contains('folder-link')) {
+                  e.preventDefault();
+                  let li = target.parentElement;
+                  let arrow = li.querySelector('.toggle-arrow');
+                  if (arrow) toggleChildren(arrow); // Calls global toggleChildren
+                  loadFileList(target.getAttribute('data-path')); // Calls global loadFileList
+              }
+          }
+
+          function handleFileListSingleClick(e) {
+              let targetLink = e.target.closest('a');
+              let fileEntry = e.target.closest('.file-entry');
+              // Navigate into folder on single click
+              if (targetLink && fileEntry && fileEntry.dataset.isDir === 'true') {
+                   if (e.detail === 1) { // Ensure it's a single click
+                       e.preventDefault();
+                       const path = targetLink.getAttribute('href')?.split('path=')[1]?.split('&')[0];
+                       if (path !== undefined) {
+                           loadFileList(decodeURIComponent(path)); // Calls global loadFileList
+                       } else {
+                           console.warn("Could not extract path from folder link:", targetLink.getAttribute('href'));
+                       }
+                   }
+               }
+          }
+
+          function handleFileListDoubleClick(e) {
+              const fileEntry = e.target.closest('.file-entry');
+              if (!fileEntry || fileEntry.dataset.isDir === 'true') return; // Ignore double clicks on folders
+              const relPath = fileEntry.dataset.relPath; if (!relPath) { console.warn("DBLClick: Missing relPath"); return; }
+              const fileName = fileEntry.querySelector('.file-name')?.textContent || relPath.split('/').pop();
+              const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+
+              // Define File Type Categories
+              const llmImageExts=['png','jpg','jpeg','webp','heic','heif'];
+              const llmDocExts=['pdf','txt','md','py','js','html','css','json', 'csv', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'log', 'sh', 'bat', 'ps1']; // <<< EXPANDED RAG types
+              const llmVideoExts=['mp4','mpeg','mov','avi','flv','mpg','webm','wmv','3gpp'];
+
+              const previewOnlyImageExts=['gif','bmp','svg','ico'];
+              const previewOnlyAudioExts=['mp3','wav','ogg','aac','flac'];
+              // basicPreviewTextExts removed as they are now in llmDocExts for RAG
+
+              const allKnownImageExts = llmImageExts.concat(previewOnlyImageExts);
+
+              // Determine Action based on file type
+              if (llmImageExts.includes(fileExt) || llmVideoExts.includes(fileExt)) {
+                  // ACTION: Open Preview + Chat UI for Image/Video
+                  console.log(`Opening Preview+Chat for LLM Image/Video: ${fileName}`);
+                  const instanceId = `file-chat-${instanceCounter++}`;
+                  createPreviewChatInstance(instanceId, fileName, relPath, 'media'); // <<< Added type hint
+
+              } else if (llmDocExts.includes(fileExt)) {
+                  // <<< ACTION: Open Preview + Chat UI for Document (Initiate RAG Processing) >>>
+                  console.log(`Initiating RAG processing for document: ${fileName}`);
+                  const instanceId = `file-chat-${instanceCounter++}`;
+                  createPreviewChatInstance(instanceId, fileName, relPath, 'document'); // <<< Added type hint
+                  initiateDocumentProcessing(instanceId, relPath, fileName);
+
+              } else if (previewOnlyImageExts.includes(fileExt) || previewOnlyAudioExts.includes(fileExt)) {
+                   // ACTION: Open Standard Modal Preview for non-LLM types
+                  console.log(`Opening standard modal for preview-only/basic file: ${fileName}`);
+                  const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
+                  let previewUrl = null; let previewType = null;
+
+                  if (allKnownImageExts.includes(fileExt)) { // Use combined list for modal check
+                      previewType = 'image'; previewUrl = `/preview_image/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
+                  } else if (previewOnlyAudioExts.includes(fileExt)) {
+                      previewType = 'audio'; previewUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`; // Use stream endpoint for audio
+                  }
+                  // Text/PDF preview logic removed from here as they are handled by RAG now
+
+                  if (previewUrl && previewType) {
+                      showPreviewModal(previewType, previewUrl, fileName); // Calls global function
+                  } else {
+                      console.warn(`Could not determine PREVIEW URL for ${fileName} (ext: ${fileExt})`);
+                      alert('미리보기를 열 수 없습니다.');
+                  }
+              } else {
+                  // ACTION: Unsupported Type
+                  console.log(`Unsupported file type ${fileExt}`);
+                  alert('지원하지 않는 파일 형식입니다.');
+              }
+          }
+
+
+          // --- Attach Event Listeners ---
+          const treeElement = document.querySelector('.tree');
+          if (treeElement) { treeElement.addEventListener('click', handleTreeClick); }
+          else { console.warn("Tree element not found."); }
+
+          // Attach File List Listeners
+          if (fileListContainer) {
+              fileListContainer.addEventListener('click', handleFileListSingleClick);
+              fileListContainer.addEventListener('dblclick', handleFileListDoubleClick);
+          } else { console.error("File list container (#file-list) not found."); }
+
+          // Setup Main Chat Listeners
+          setupMainChatListeners();
+
+          // Initialize Main Chat UI
+          if (mainChatMessages) { addMessageToChat("안녕하세요! 무엇을 도와드릴까요?", 'assistant', { messages: mainChatMessages }, null, mainChatHistory); }
+          else { console.warn("Main chat messages container not found on init."); }
+
+          // Setup Search Listener
+          const searchInput = document.getElementById('searchInput');
+          let searchTimeout;
+          if (searchInput) {
+              searchInput.addEventListener('input', () => {
+                  clearTimeout(searchTimeout);
+                  searchTimeout = setTimeout(() => {
+                      const q = searchInput.value.toLowerCase();
+                      document.querySelectorAll('#file-list .file-entry').forEach(el => {
+                          // Keep 'Up' directory visible
+                          if (el.querySelector('.file-icon')?.textContent === '⤴️') {
+                               el.style.display = 'flex';
+                               return;
+                           }
+                           // Filter files/folders based on name
+                          // Ensure this logic correctly handles files vs folders if needed
+                          const nameEl = el.querySelector('.file-name') || el.querySelector('a.folder-link'); // Handle both files and folders
+                          const name = nameEl ? nameEl.textContent.toLowerCase() : '';
+                          el.style.display = name.includes(q) ? 'flex' : 'none';
+                      });
+                  }, 200);
+              });
+          } else { console.warn("Search input not found."); }
+
+          // Setup Drag & Drop Listeners
+          const dropArea = document.getElementById('drop-area');
+          if (dropArea) {
+              ['dragenter','dragover','dragleave','drop'].forEach(ev=>dropArea.addEventListener(ev,preventDefaults,false));
+              ['dragenter','dragover'].forEach(ev=>dropArea.addEventListener(ev,()=>dropArea.classList.add('highlight'),false));
+              ['dragleave','drop'].forEach(ev=>dropArea.addEventListener(ev,()=>dropArea.classList.remove('highlight'),false));
+              dropArea.addEventListener('drop',handleDrop,false);
+              // Prevent default browser drag/drop behavior on the body
+              ['dragenter','dragover','drop'].forEach(ev=>document.body.addEventListener(ev,preventDefaults,false));
+
+              const dropAreaFileInput = dropArea.querySelector('input[type="file"]');
+              if (dropAreaFileInput) {
+                  dropAreaFileInput.addEventListener('change', function() { if (this.files.length > 0) { handleFiles(this.files); } });
+              }
+          }
+
+          // Initial File List Load
+          const initialPath = new URLSearchParams(window.location.search).get('path') || '';
+          loadFileList(initialPath);
+
+      }); // ====== End DOMContentLoaded ======
+
+      // --- >>> NEW Function to initiate document processing <<< ---
+      async function initiateDocumentProcessing(instanceId, relPath, fileName) {
+          const instance = fileChatInstances[instanceId];
+          if (!instance || !instance.elements?.messages || !instance.elements.input || !instance.elements.sendButton) {
+              console.error(`initDocProc: Instance ${instanceId} or critical elements missing.`);
+              // Optionally display an error in the instance's chat
+              if (instance?.elements?.messages) {
+                  addMessageToChat("오류: 문서 처리 UI 초기화 실패.", 'assistant', instance.elements);
+              }
+              return;
+          }
+
+          const chatElements = instance.elements;
+          const processingMessage = "문서 분석 및 벡터화 작업 중... 잠시 기다려주세요. 완료 후 메시지가 표시됩니다.";
+
+          // Display processing message and disable input
+          addMessageToChat(processingMessage, 'assistant', chatElements, null, instance.history);
+          chatElements.input.disabled = true;
+          chatElements.sendButton.disabled = true;
+          // Optionally hide preview area during processing?
+          // if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">Processing...</span>';
+          if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 내용 분석 중...</span>'; // Keep preview area visible with message
+
+          try {
+              const apiKey = "{{ api_key|urlencode }}";
+              const response = await fetch('/process_document', {
                   method: 'POST',
-                  body: formData // FormData sets Content-Type automatically
+                  headers: {
+                      'Content-Type': 'application/json',
+                      'X-Api-Key': apiKey // Send API key in header
+                  },
+                  body: JSON.stringify({ instanceId, relPath, fileName })
               });
 
-              // Remove thinking message
-              if (thinkingMessageElement) {
-                  chatMessages.removeChild(thinkingMessageElement);
-              }
+              const result = await response.json();
 
-              if (!response.ok) {
-                  let errorMsg = `오디오 처리 오류: ${response.statusText}`;
-                  try {
-                      const errorData = await response.json();
-                      errorMsg = `오디오 처리 오류: ${errorData.error || response.statusText}`;
-                  } catch (e) { /* Ignore */ }
-                  addMessageToChat(errorMsg, 'assistant');
+              if (response.ok) {
+                  console.log(`Document processing succeeded for ${instanceId}:`, result.message);
+                  addMessageToChat(`✅ ${result.message || '문서 처리 완료.'} 이제 문서에 대해 질문할 수 있습니다.`, 'assistant', chatElements, null, instance.history);
+                   // Clear the preview placeholder after successful processing
+                   if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 분석 완료.</span>';
+                   // <<< ADDED: Load the actual preview after processing is complete >>>
+                   loadPreviewContent(instanceId, relPath, fileName);
               } else {
-                  const data = await response.json();
-                  addMessageToChat(data.response, 'assistant');
+                  console.error(`Document processing failed for ${instanceId}:`, result.error);
+                  addMessageToChat(`❌ 문서 처리 실패: ${result.error || '알 수 없는 오류'}. 채팅 기능이 제한될 수 있습니다.`, 'assistant', chatElements, null, instance.history);
+                   if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 분석 실패.</span>';
               }
+
           } catch (error) {
-              const thinkingMessageElement = chatMessages.querySelector('.assistant-message:last-child');
-              if (thinkingMessageElement && thinkingMessageElement.textContent === '...') {
-                  chatMessages.removeChild(thinkingMessageElement);
-              }
-              console.error('Audio Chat Error:', error);
-              addMessageToChat('오디오 처리 중 오류 발생.', 'assistant');
+              console.error(`Error calling /process_document for ${instanceId}:`, error);
+              addMessageToChat(`❌ 문서 처리 요청 중 오류 발생: ${error.message}.`, 'assistant', chatElements, null, instance.history);
+              if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 분석 중 오류 발생.</span>';
           } finally {
-             // Re-enable inputs after processing
-             chatInput.disabled = false;
-             sendButton.disabled = false;
-             imageUploadButton.disabled = false;
-             micButton.disabled = false;
-             micStatus.textContent = '';
+              // Re-enable input regardless of success or failure
+              // Users might still want to ask general questions even if RAG fails
+              chatElements.input.disabled = false;
+              chatElements.sendButton.disabled = false;
+              console.log(`Input re-enabled for instance ${instanceId} after document processing attempt.`);
           }
-      }
-      // --- Audio Recording Logic --- END
-
-      function handleImageFileSelect(event) {
-          const file = event.target.files[0];
-          if (file && file.type.startsWith('image/')) {
-              attachedImageData = file; // Store the file object
-
-              // Show preview
-              const reader = new FileReader();
-              reader.onload = function(e) {
-                  imagePreview.src = e.target.result;
-                  imageFilename.textContent = file.name;
-                  imagePreviewArea.style.display = 'flex';
-              }
-              reader.readAsDataURL(file);
-          } else {
-              // Clear if invalid file selected
-              clearAttachedImage();
-              alert('이미지 파일만 선택해주세요.');
-          }
-          // Reset input value so the same file can be selected again after removal
-          imageUploadInput.value = null;
-      }
-
-      function clearAttachedImage() {
-          attachedImageData = null;
-          imagePreview.src = '#';
-          imageFilename.textContent = '';
-          imagePreviewArea.style.display = 'none';
-          imageUploadInput.value = null; // Also clear the input
-      }
-
-      // Helper function to create payload (JSON or FormData)
-      function createChatPayload(message, model, history) {
-          console.log("[Debug] createChatPayload ENTER - attachedImageData:", attachedImageData);
-          if (attachedImageData) {
-              console.log("[Debug] createChatPayload: Creating FormData.");
-              const formData = new FormData();
-              formData.append('message', message || ''); // Send empty string if no text
-              formData.append('model', model);
-              formData.append('history', JSON.stringify(history)); // History as JSON string
-              formData.append('image', attachedImageData); // Add image file
-              // Content-Type header is set automatically by browser for FormData
-              return formData;
-          } else {
-              console.log("[Debug] createChatPayload: Creating JSON string.");
-              // Standard JSON payload for text-only messages
-              const body = JSON.stringify({ message, model, history });
-              return body; // Just return body, headers handled in fetch
-          }
-      }
-
-      // --- Chat Functionality --- END
-
-      // Add event listener for clicks within the main file list area
-      document.getElementById('file-list').addEventListener('click', function(e) {
-          // Check if a folder link inside the list was clicked
-          let target = e.target.closest('a'); // Find the nearest ancestor anchor tag
-          if (target && target.closest('.file-entry[data-is-dir="true"]')) { // Ensure it's a directory entry's link
-              e.preventDefault(); // Prevent default page navigation
-              const path = target.getAttribute('href').split('path=')[1].split('&')[0]; // Extract path from href
-              const decodedPath = decodeURIComponent(path); // Decode the path
-              loadFileList(decodedPath); // Load content using AJAX
-          }
-      });
-
-      // Refresh chat listener
-      refreshChatButton.addEventListener('click', clearChat);
-
-      function clearChat() {
-          console.log("Clearing chat...");
-          // Clear message display
-          chatMessages.innerHTML = '';
-          // Clear JS history
-          chatHistory = [];
-          // Clear attached image/preview
-          clearAttachedImage();
-          // Clear input field
-          chatInput.value = '';
-          // Add initial message back (optional)
-          addMessageToChat("안녕하세요! 무엇을 도와드릴까요?", 'assistant');
-          // Ensure buttons are enabled (in case they were disabled)
-          sendButton.disabled = false;
-          micButton.disabled = false;
-          imageUploadButton.disabled = false;
-          chatInput.disabled = false;
-          // Reset mic status if needed
-          if (isRecording) {
-              // Handle stopping recording if refresh is clicked during recording
-              mediaRecorder?.stop(); // Stop if active
-              isRecording = false;
-              micButton.classList.remove('recording');
-          }
-          micStatus.textContent = '';
       }
 
     </script>

@@ -1,4 +1,4 @@
-from flask import Flask, request, send_file, abort, render_template, redirect, url_for, session, Response, stream_with_context
+from flask import Flask, request, send_file, abort, render_template, redirect, url_for, session, Response, stream_with_context, jsonify
 import os
 import datetime
 import functools
@@ -13,8 +13,15 @@ import google.generativeai as genai
 import json
 from PIL import Image
 import io
+import google.api_core.exceptions as exceptions
+from google.generativeai.types import BlockedPromptException
 # Correct imports based on API expectations and common usage
 # from google.generativeai.types import Tool, GenerateContentConfig, GoogleSearch
+
+# <<< RAG Imports >>>
+import fitz # PyMuPDF
+from sentence_transformers import SentenceTransformer
+import numpy as np
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,6 +47,24 @@ REQUIRED_DEVICE = '6030'
 REQUIRED_BROWSER = 'true'
 
 tree_cache = {}
+
+# <<< RAG Initialization >>>
+# Load Sentence Transformer model (adjust model name if needed)
+# Using a multilingual model suitable for Korean and English
+try:
+    print("Loading Sentence Transformer model...")
+    # Consider smaller/faster models if resource usage is a concern
+    # e.g., 'distiluse-base-multilingual-cased-v1' or specific Ko models
+    embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
+    print("Sentence Transformer model loaded successfully.")
+except Exception as e:
+    print(f"FATAL: Failed to load Sentence Transformer model: {e}")
+    # Optionally exit or disable RAG features if model loading fails
+    embedding_model = None
+
+# In-memory store for document chunks and embeddings
+# Structure: { instanceId: { 'chunks': [chunk1, chunk2, ...], 'embeddings': [emb1, emb2, ...] } }
+document_vector_stores = {}
 
 def require_api_key(f):
     @functools.wraps(f)
@@ -763,179 +788,377 @@ def preview_pdf_file(rel_path):
     else:
         abort(404)
 
+# --- RAG Helper Functions --- START
+
+def extract_text_from_pdf(file_path):
+    """Extracts text from a PDF file using PyMuPDF."""
+    text = ""
+    try:
+        with fitz.open(file_path) as doc:
+            for page in doc:
+                text += page.get_text()
+        print(f"Extracted {len(text)} characters from PDF: {os.path.basename(file_path)}")
+        return text
+    except Exception as e:
+        print(f"Error extracting text from PDF {file_path}: {e}")
+        return None
+
+def extract_text_from_plain(file_path):
+    """Extracts text from plain text files (txt, md, py, etc.). Tries common encodings."""
+    encodings_to_try = ['utf-8', 'cp949', 'euc-kr', 'latin-1']
+    for enc in encodings_to_try:
+        try:
+            with open(file_path, 'r', encoding=enc) as f:
+                text = f.read()
+            print(f"Extracted {len(text)} characters from plain text file: {os.path.basename(file_path)} using {enc}")
+            return text
+        except UnicodeDecodeError:
+            continue
+        except Exception as e:
+            print(f"Error extracting text from plain file {file_path} with {enc}: {e}")
+            # Stop trying if a non-decode error occurs
+            return None
+    # If all encodings fail, try reading as binary with replacement
+    try:
+        with open(file_path, 'rb') as f:
+            binary_content = f.read()
+        text = binary_content.decode('utf-8', errors='replace')
+        print(f"Extracted {len(text)} characters from plain text file (binary fallback): {os.path.basename(file_path)}")
+        return text
+    except Exception as e:
+        print(f"Final fallback error reading plain text file {file_path}: {e}")
+        return None
+
+def chunk_text(text, chunk_size=500, chunk_overlap=50):
+    """Splits text into chunks with overlap (simple character-based)."""
+    if not text:
+        return []
+    chunks = []
+    start = 0
+    while start < len(text):
+        end = start + chunk_size
+        chunks.append(text[start:end])
+        start += chunk_size - chunk_overlap # Move start forward with overlap
+        if start >= len(text): # Prevent infinite loop on very short overlaps
+             break
+    print(f"Split text into {len(chunks)} chunks.")
+    return chunks
+
+def get_embeddings(texts):
+    """Generates embeddings for a list of texts using the loaded model."""
+    if not embedding_model or not texts:
+        return None
+    try:
+        embeddings = embedding_model.encode(texts, convert_to_tensor=False) # Get numpy arrays
+        print(f"Generated {len(embeddings)} embeddings.")
+        return embeddings
+    except Exception as e:
+        print(f"Error generating embeddings: {e}")
+        return None
+
+def find_relevant_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
+    """Finds top_k most relevant chunks based on cosine similarity."""
+    if query_embedding is None or chunk_embeddings is None or not chunks:
+        return []
+    # Calculate cosine similarities
+    # Normalize embeddings for efficient cosine similarity calculation
+    query_norm = query_embedding / np.linalg.norm(query_embedding)
+    chunk_norms = chunk_embeddings / np.linalg.norm(chunk_embeddings, axis=1)[:, np.newaxis]
+    similarities = np.dot(chunk_norms, query_norm)
+
+    # Get top_k indices
+    # Use partition for efficiency if top_k is small relative to total chunks
+    # For simplicity, using argsort here
+    sorted_indices = np.argsort(similarities)[::-1] # Sort descending
+    top_indices = sorted_indices[:top_k]
+
+    relevant_chunks = [(chunks[i], similarities[i]) for i in top_indices]
+    print(f"Found {len(relevant_chunks)} relevant chunks with similarities: {[f'{s:.3f}' for _, s in relevant_chunks]}")
+    return [chunk for chunk, _ in relevant_chunks] # Return only the chunk text
+
+# --- RAG Helper Functions --- END
+
+# --- Document Processing Endpoint --- START
+@app.route('/process_document', methods=['POST'])
+@require_api_key
+def process_document():
+    if not embedding_model:
+        return {"error": "Embedding model not loaded."}, 500
+
+    data = request.json
+    rel_path = data.get('relPath')
+    instance_id = data.get('instanceId')
+    file_name = data.get('fileName') # Get filename for extension check
+
+    if not rel_path or not instance_id or not file_name:
+        return {"error": "Missing required parameters (relPath, instanceId, fileName)."}, 400
+
+    drive = get_base_dir() # Get the current drive
+    full_path = get_validated_path(drive, rel_path) # Validate and get full path
+    file_ext = os.path.splitext(file_name)[1].lower()
+
+    print(f"Processing document: {rel_path} for instance: {instance_id}")
+
+    text = None
+    if file_ext == '.pdf':
+        text = extract_text_from_pdf(full_path)
+    elif file_ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.csv', '.xml', '.yaml', '.yml', '.ini', '.cfg', '.log', '.sh', '.bat', '.ps1']: # Add more supported text extensions here
+        text = extract_text_from_plain(full_path)
+    else:
+        # Note: Add support for docx, pptx etc. here if needed later
+        print(f"Skipping processing for unsupported file type: {file_ext}")
+        return {"error": f"Unsupported file type for RAG: {file_ext}"}, 415
+
+    if text is None:
+        print(f"Failed to extract text from {rel_path}")
+        return {"error": "Failed to extract text from the document."}, 500
+
+    chunks = chunk_text(text) # Use default chunk size/overlap for now
+    if not chunks:
+        print(f"No chunks generated for {rel_path}")
+        return {"error": "Document is empty or could not be chunked."}, 400
+
+    embeddings = get_embeddings(chunks)
+    if embeddings is None:
+        print(f"Failed to generate embeddings for {rel_path}")
+        return {"error": "Failed to generate embeddings for the document."}, 500
+
+    # Store chunks and embeddings in memory
+    document_vector_stores[instance_id] = {
+        'chunks': chunks,
+        'embeddings': embeddings,
+        'rel_path': rel_path # Store path for potential future use/validation
+    }
+
+    print(f"Successfully processed and stored document for instance {instance_id}. Chunks: {len(chunks)}, Embeddings shape: {embeddings.shape}")
+    return {"message": f"문서 처리 완료: {len(chunks)}개 청크 생성됨"}, 200
+
+# --- Document Processing Endpoint --- END
+
 # --- Gemini Chat Endpoint --- START
 @app.route('/chat', methods=['POST'])
-@require_api_key # Ensure the user is authenticated
-def handle_chat():
-    api_key = app.config.get('GEMINI_API_KEY')
-    if not api_key:
-        return {"error": "Gemini API 키가 설정되지 않았습니다."}, 500
+@require_api_key
+def chat():
+    if not app.config.get('GEMINI_API_KEY'):
+        return jsonify({"error": "API key not configured."}), 500
 
-    # Configure the Gemini client
-    try:
-        genai.configure(api_key=api_key)
-    except Exception as e:
-        print(f"Gemini 구성 오류: {e}")
-        return {"error": "Gemini 클라이언트 설정에 실패했습니다."}, 500
-
-    # --- Handle request based on Content-Type --- START
-    history = []
-    user_message = None
-    model_name = None
-    image_part = None
-
+    # Determine content type and parse data
     content_type = request.content_type
+    data = None
+    image_file = None
+    instance_id = None # <<< Added for RAG context
 
     if content_type.startswith('application/json'):
         data = request.json
-        if data is None:
-            return {"error": "잘못된 요청 형식입니다. Content-Type은 application/json 이어야 합니다."}, 400
-        user_message = data.get('message')
-        model_name = data.get('model')
-        history = data.get('history', [])
-
+        instance_id = data.get('instanceId') # <<< Get instanceId from JSON
     elif content_type.startswith('multipart/form-data'):
-        user_message = request.form.get('message')
-        model_name = request.form.get('model')
-        history_str = request.form.get('history', '[]')
-        try:
-            history = json.loads(history_str)
-            if not isinstance(history, list):
-                 raise ValueError("History is not a list")
-        except (json.JSONDecodeError, ValueError) as e:
-            print(f"Error parsing history from FormData: {e}")
-            return {"error": f"잘못된 히스토리 형식입니다: {e}"}, 400
-
-        if 'image' in request.files:
-            image_file = request.files['image']
+        data = request.form.to_dict()
+        image_file = request.files.get('image')
+        instance_id = data.get('instanceId') # <<< Get instanceId from FormData
+        # Need to parse history from string if it's FormData
+        if 'history' in data:
             try:
-                # Validate MIME type briefly
-                if not image_file.mimetype.startswith('image/'):
-                    return {"error": "첨부된 파일이 이미지가 아닙니다."}, 400
-
-                # Read image data
-                image_bytes = image_file.read()
-                img = Image.open(io.BytesIO(image_bytes))
-
-                # Prepare image part for Gemini API
-                image_part = {
-                    "mime_type": image_file.mimetype,
-                    "data": image_bytes
-                }
-                print(f"[Debug] Prepared image_part: mime_type={image_part['mime_type']}, data_length={len(image_part['data'])}")
-                # Force using a vision-capable model when image is present
-                # Note: Replace with the actual latest vision model if different
-                print(f"Image detected. Forcing model to gemini-1.5-flash-latest (original: {model_name})")
-                model_name = "gemini-1.5-flash-latest" # Or gemini-pro-vision
-
-            except Exception as e:
-                print(f"Error processing uploaded image: {e}")
-                return {"error": f"이미지 처리 중 오류 발생: {e}"}, 500
-        else:
-            # FormData request but no image file found
-            return {"error": "이미지 파일이 요청에 포함되지 않았습니다."}, 400
+                data['history'] = json.loads(data['history'])
+            except json.JSONDecodeError:
+                return jsonify({"error": "Invalid history format in form data."}), 400
     else:
-         return {"error": f"지원되지 않는 Content-Type: {content_type}"}, 415
-    # --- Handle request based on Content-Type --- END
+        return jsonify({"error": "Unsupported Content-Type"}), 415
 
-    # Validate history format (basic check)
+    if not data:
+        return jsonify({"error": "Invalid request data"}), 400
+
+    message = data.get('message', '')
+    model_name = data.get('model', 'gemini-1.5-flash-latest') # Default to flash
+    history = data.get('history', []) # Expecting list of {'role': 'user'/'model', 'parts': [{'text': '...'}]}
+
+    # Validate history format (simple check)
     if not isinstance(history, list):
-         return {"error": "잘못된 히스토리 형식입니다."}, 400
-    # Add more validation if needed (e.g., check structure of each item)
+        history = [] # Reset if format is wrong
 
-    if user_message is None or model_name is None: # Check for None after extraction
-        return {"error": "메시지 또는 모델 이름이 누락되었습니다."}, 400
+    print(f"Received chat request. Model: {model_name}, InstanceID: {instance_id}, History Length: {len(history)}, Image Attached: {image_file is not None}")
 
-    try:
-        model = genai.GenerativeModel(model_name)
-
-        # --- Prepare content for API call --- START
-        # Combine history and the new prompt
-        # Ensure history items have the correct format {role: ..., parts: [...]} expected by API
-        # Our current JS history format matches this.
-        prompt_parts = []
-        # Ensure user_message is added as a dict part if it exists
-        if user_message:
-            prompt_parts.append({"text": user_message})
-        # Append image part AFTER text part, if it exists
-        # Gemini API prefers text before image in the parts list for multimodal input
-        if image_part: 
-            prompt_parts.append(image_part) 
-
-        if not prompt_parts:
-             return {"error": "메시지와 이미지가 모두 비어있습니다."}, 400
-
-        print(f"[Debug] Current prompt_parts (before adding to history list): {prompt_parts}") # Renamed log message
-
-        # Construct the full conversation payload for generate_content
-        validated_history = []
-        for entry in history:
-            role = entry.get('role')
-            parts = entry.get('parts')
-            if role in ['user', 'model'] and isinstance(parts, list) and parts:
-                validated_history.append({'role': role, 'parts': parts})
+    # <<< RAG Logic Integration >>>
+    rag_context = ""
+    is_document_chat = False
+    if instance_id and instance_id in document_vector_stores:
+        is_document_chat = True
+        print(f"Instance {instance_id} found in document store. Applying RAG.")
+        doc_store = document_vector_stores[instance_id]
+        if not message:
+            print("Skipping RAG for empty message in document chat.")
+        elif not embedding_model:
+             print("Skipping RAG because embedding model is not loaded.")
+        else:
+            # Generate embedding for the user's query
+            query_embedding = get_embeddings([message])
+            if query_embedding is not None:
+                relevant_chunks = find_relevant_chunks(
+                    query_embedding[0], # Get the single query embedding
+                    doc_store['embeddings'],
+                    doc_store['chunks'],
+                    top_k=3 # Retrieve top 3 relevant chunks
+                )
+                if relevant_chunks:
+                    rag_context = "\n\n-- 문서 내용 --\n"
+                    rag_context += "\n\n".join(relevant_chunks)
+                    rag_context += "\n--------------\n"
+                    print(f"Added RAG context for instance {instance_id}")
+                else:
+                    print("No relevant chunks found for the query.")
             else:
-                print(f"[Warning] Skipping invalid history entry: {entry}")
+                 print("Failed to generate query embedding.")
 
-        contents_payload = validated_history + [{'role': 'user', 'parts': prompt_parts}]
-         
-        print(f"Sending to Gemini ({model_name}). History length: {len(validated_history)}, Image attached: {image_part is not None}")
-        print(f"[Debug] Contents Payload being sent to API:", contents_payload)
-
-        # Use generate_content which handles history and multimodality
-        # Remove the config parameter
-        response = model.generate_content(
-            contents_payload
-        )
-
-        # --- Streaming Response --- START
-        def stream_response(api_response):
-            try:
-                for chunk in api_response:
-                    if chunk.text:
-                        # Send data using Server-Sent Events (SSE) format
-                        yield f"data: {json.dumps({'response': chunk.text})}\n\n"
-            except Exception as e:
-                print(f"Error during streaming: {e}")
-                # Send an error event (optional)
-                yield f"data: {json.dumps({'error': f'스트리밍 중 오류 발생: {e}'})}\n\n"
-            finally:
-                 # Signal end of stream (optional, client can handle stream end)
-                 yield f"event: end\ndata: Stream ended\n\n"
-
-        # Check if response is streamable (depends on API/model behavior)
-        # For generate_content with stream=True, the response itself is the iterator
-        try:
-             # Call generate_content with stream=True
-             stream = model.generate_content(
-                 contents_payload,
-                 stream=True
-             )
-             # Return a streaming response
-             return Response(stream_with_context(stream_response(stream)), mimetype='text/event-stream')
-
-        except Exception as e:
-             print(f"Gemini API 스트리밍 호출 오류 ({model_name}): {e}")
-             # Return a non-streaming error if the initial call fails
-             error_detail = str(e)
-             if "API key not valid" in error_detail:
-                  error_msg = "Gemini API 키가 유효하지 않습니다. .env 파일을 확인하세요."
-             elif "quota" in error_detail.lower():
-                  error_msg = "Gemini API 할당량이 초과되었습니다."
-             else:
-                  error_msg = f"Gemini API ({model_name}) 스트리밍 호출 중 오류 발생: {error_detail}"
-             # Send error as a single JSON response for non-streaming failures
-             # Client-side fetch needs to handle this potentially non-streaming error
-             return {"error": error_msg}, 500
-        # --- Streaming Response --- END
-
+    # --- Model Initialization --- (Moved after RAG context generation)
+    try:
+        genai.configure(api_key=app.config['GEMINI_API_KEY'])
+        model = genai.GenerativeModel(model_name)
     except Exception as e:
-        # This outer try-except might catch errors before streaming starts
-        print(f"Gemini API 호출 준비 오류 ({model_name}): {e}")
-        error_detail = str(e)
-        error_msg = f"Gemini API ({model_name}) 호출 준비 중 오류 발생: {error_detail}"
-        return {"error": error_msg}, 500
+        print(f"Error initializing Gemini model: {e}")
+        return jsonify({"error": f"Failed to initialize model: {e}"}), 500
+
+    # --- Prepare Prompt and History --- 
+    # Construct the final prompt for the model
+    # For RAG, prepend context to the latest user message
+    # For image chats, handle image data
+    # For regular chats, just use the message
+
+    chat_session = model.start_chat(history=history)
+    prompt_parts = []
+
+    # <<< MODIFIED: Construct a single text prompt including RAG context >>>
+    final_prompt_text = ""
+
+    # Append RAG context if available
+    if rag_context:
+        final_prompt_text += rag_context # Prepend RAG context
+
+    # Append user message text
+    if message:
+        final_prompt_text += message # Append user message after RAG context
+
+    # Handle image input (if not a document chat and image exists)
+    # Document chats currently do not support simultaneous image input in this flow
+    image_prompt_part = None # Store potential image part separately
+    if image_file and not is_document_chat:
+        try:
+            img_bytes = image_file.read()
+            # Prepare image part for Gemini API directly
+            image_prompt_part = {
+                "mime_type": image_file.mimetype,
+                "data": img_bytes
+            }
+
+            print(f"Processing image: {image_file.filename}, size: {len(img_bytes)} bytes")
+            # Determine appropriate prompt based on history
+            if not history or len(history) == 0: # Initial image upload
+                # Revised initial prompt for more detailed analysis
+                initial_prompt = (
+                    "이 이미지를 자세히 분석하고 주요 요소, 객체, 장면, 분위기 등을 설명해주세요. "
+                    "가능하다면 텍스트(OCR)도 추출해주세요. "
+                    "분석이 끝나면 이 이미지에 대해 무엇이 궁금한지 물어봐주세요."
+                )
+                # Prepend the initial prompt to the main text
+                final_prompt_text = initial_prompt + ("\n\n" + final_prompt_text if final_prompt_text else "")
+                print("Using detailed initial analysis prompt.")
+            else:
+                # Follow-up question with image context
+                print("Sending follow-up message with image context.")
+        except Exception as e:
+            print(f"Error processing image: {e}")
+            # Decide how to handle: return error or proceed without image?
+            # For now, let's proceed without the image if processing fails
+            image_prompt_part = None # Discard image part on error
+            # Optionally add an error message to the prompt?
+            # final_prompt_text += "\n(이미지 처리 실패)" # Add failure notice to text
+            pass # Continue without image if processing fails
+
+    # --- Construct final prompt parts for API call ---
+    final_api_parts = []
+    if final_prompt_text: # Add the combined text part if it's not empty
+        final_api_parts.append(final_prompt_text)
+    if image_prompt_part: # Add the image part if it exists
+        final_api_parts.append(image_prompt_part)
+
+    # --- Generate Response --- 
+    if not final_api_parts:
+         # Handle cases where there's nothing to send (e.g., empty message and no image/context)
+         print("Prompt is empty, sending default response.")
+         def empty_stream():
+            yield f'event: data\ndata: {{"response": "메시지를 입력해주세요."}}\n\n'
+            yield f'event: end\ndata: {{}}\n\n'
+         return Response(empty_stream(), mimetype='text/event-stream')
+
+    print(f"Sending to Gemini. Final API Parts Count: {len(final_api_parts)}")
+    # print(f"Prompt Parts Content (text only): {[p for p in prompt_parts if isinstance(p, str)]}")
+
+    # --- Streaming Response --- 
+    def stream():
+        try:
+            # Use generate_content with stream=True
+            response_stream = chat_session.send_message(final_api_parts, stream=True)
+
+            for chunk in response_stream:
+                if chunk.parts:
+                    text_part = chunk.parts[0].text
+                    # print(f"Stream chunk: {text_part[:50]}...") # Debug output
+                    # Send data formatted as Server-Sent Events (SSE)
+                    yield f'data: {json.dumps({"response": text_part})}\n\n' # <<< Use standard SSE format
+                # Add safety rating check if needed
+                # if chunk.prompt_feedback and chunk.prompt_feedback.block_reason:
+                #    print(f"Request blocked: {chunk.prompt_feedback.block_reason}")
+                #    yield f'data: {json.dumps({"error": f"요청 차단됨: {chunk.prompt_feedback.block_reason}"})}\n\n'
+                #    return # Stop streaming on block
+
+            # Signal the end of the stream
+            yield f'event: end\ndata: Stream ended\n\n' # <<< Signal end with standard event
+            print("Stream finished.")
+
+        except exceptions.GoogleAPICallError as e:
+            # Handle specific API call errors (e.g., quota, unavailable)
+            print(f"Google API Call Error: {e}")
+            error_message = f"API 호출 오류: {e.message}"
+            if hasattr(e, 'status_code') and e.status_code == 503: # Overloaded
+                 error_message = "모델 사용량 초과(503). 잠시 후 다시 시도해주세요."
+            yield f'data: {json.dumps({"error": error_message})}\n\n'
+            yield f'event: end\ndata: Error occurred\n\n' # <<< Signal end
+        except exceptions.BlockedPromptException as e:
+            # Handle blocked prompts specifically
+            print(f"Blocked Prompt Error: {e}")
+            yield f'data: {json.dumps({"error": f"요청 차단됨 (프롬프트): {e}"})}\n\n'
+            yield f'event: end\ndata: Error occurred\n\n' # <<< Signal end
+        except Exception as e:
+            # Catch-all for other unexpected errors during streaming
+            print(f"Streaming Error: {e}")
+            # traceback.print_exc() # Optional detailed traceback
+            yield f'data: {json.dumps({"error": f"스트리밍 중 오류 발생: {e}"})}\n\n'
+            yield f'event: end\ndata: Error occurred\n\n' # <<< Signal end
+
+    return Response(stream(), mimetype='text/event-stream')
+
 # --- Gemini Chat Endpoint --- END
+
+# --- Document Cache Clearing Endpoint --- START
+@app.route('/clear_document_cache', methods=['POST'])
+@require_api_key
+def clear_document_cache():
+    data = request.json
+    instance_id = data.get('instanceId')
+
+    if not instance_id:
+        return jsonify({"error": "Missing instanceId parameter."}), 400
+
+    if instance_id in document_vector_stores:
+        del document_vector_stores[instance_id]
+        print(f"Cleared document cache for instance: {instance_id}")
+        # Also trigger garbage collection potentially?
+        # import gc
+        # gc.collect()
+        return jsonify({"message": f"Cache cleared for instance {instance_id}"}), 200
+    else:
+        print(f"Attempted to clear cache for non-existent instance: {instance_id}")
+        return jsonify({"error": "Instance ID not found in cache."}), 404
+
+# --- Document Cache Clearing Endpoint --- END
 
 # --- Gemini Audio Chat Endpoint --- START
 @app.route('/chat_audio', methods=['POST'])
