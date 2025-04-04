@@ -130,23 +130,6 @@
   </div>
   
   <script>
-    // Safari 브라우저 여부를 판단하는 함수 (consistent with backend check)
-    function isSafariBrowser() {
-      var ua = navigator.userAgent;
-      // Checks for Safari and ensures it's not Chrome or Edge which also contain "Safari" string
-      return ua.includes("Safari") && !ua.includes("Chrome") && !ua.includes("Edg");
-    }
-    
-    // 페이지 로드 시 Safari 여부를 확인하여 숨겨진 필드에 저장
-    window.addEventListener('load', function() {
-      var safari = isSafariBrowser();
-      document.getElementById("isSafari").value = safari ? "true" : "false";
-      // Device parameter logic (set to 6030 if Safari, empty otherwise)
-      document.getElementById("deviceParam").value = safari ? "6030" : "";
-      console.log("isSafari:", document.getElementById("isSafari").value,
-                  "device:", document.getElementById("deviceParam").value);
-    });
-    
     function connectToServer() {
       document.getElementById('loadingIndicator').style.display = 'block';
       document.getElementById('inputErrorMsg').style.display = 'none'; // Hide input-specific error
@@ -158,15 +141,10 @@
         return;
       }
       
-      var isSafariVal = document.getElementById("isSafari").value;
-      var device = document.getElementById("deviceParam").value;
-      
-      // Construct URL using current host to avoid hardcoding IP
+      // Construct URL using current host
       var baseUrl = window.location.protocol + "//" + window.location.host + "/"; 
       var params = new URLSearchParams({
-        api_key: apiKey,
-        is_safari: isSafariVal, // Use is_safari parameter name
-        device: device
+        api_key: apiKey
       });
       var serverUrl = baseUrl + "?" + params.toString();
       window.location.href = serverUrl; // Redirect to the main file browser route

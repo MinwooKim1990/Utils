@@ -8,9 +8,27 @@ import mimetypes
 import re
 from stringencode import encode_string, decode_string
 from markupsafe import escape
+from dotenv import load_dotenv
+import google.generativeai as genai
+import json
+from PIL import Image
+import io
+# Correct imports based on API expectations and common usage
+# from google.generativeai.types import Tool, GenerateContentConfig, GoogleSearch
+
+# Load environment variables from .env file
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)  # Flask 세션 사용을 위한 secret key
+
+# Load Gemini API Key from environment variable
+gemini_api_key = os.getenv('GEMINI_API_KEY')
+if not gemini_api_key:
+    print("경고: GEMINI_API_KEY 환경 변수가 설정되지 않았습니다. .env 파일을 확인하세요.")
+    # Potentially abort or use a default/dummy key for development
+    # For now, we'll store None or an empty string
+app.config['GEMINI_API_KEY'] = gemini_api_key
 
 # 평문 API 키와 관련 설정
 API_KEY = 'MinwooKim1990'
@@ -28,44 +46,52 @@ def require_api_key(f):
     def decorated(*args, **kwargs):
         received_key = request.args.get('api_key')
         
-        # Safari 브라우저와 디바이스 파라미터 확인
-        is_safari = request.args.get('is_safari')
+        # Device 파라미터 확인 (Safari 관련 제거)
         device = request.args.get('device')
         
         # 세션에 이미 인증됨을 저장하고 있는지 확인
         if 'authenticated' in session and session['authenticated']:
-            return f(*args, **kwargs)
-            
-        # Safari 브라우저와 디바이스 파라미터 검증
-        if is_safari and device:
-            # 해당 파라미터를 URL에서 숨기기 위해 세션에 저장
-            session['is_safari'] = is_safari
+             # 인증된 후에는 device 파라미터 없어도 세션 확인만으로 통과
+             if session.get('device') == REQUIRED_DEVICE:
+                 return f(*args, **kwargs)
+             else:
+                 # 세션은 인증되었으나 기기 정보가 없거나 다른 경우 (비정상 상태)
+                 session.clear() # 세션 초기화
+                 return render_template('login.html', error="기기 인증 정보가 유효하지 않습니다. 다시 로그인해주세요.")
+
+        # Device 파라미터가 처음 제공된 경우 세션에 저장
+        if device:
             session['device'] = device
-            
-            # 필요한 값과 일치하는지 확인
-            if is_safari != REQUIRED_BROWSER or device != REQUIRED_DEVICE:
-                return render_template('login.html', error="인증되지 않은 기기입니다. 접근이 거부되었습니다.")
-        
+            # 필요한 값과 일치하는지 확인 (여기서 바로 검사)
+            if device != REQUIRED_DEVICE:
+                 session.clear()
+                 return render_template('login.html', error=f"인증되지 않은 기기({device})입니다. 접근이 거부되었습니다.")
+
         # 세션에 암호가 없고 plain API_KEY로 접속한 경우
         if 'encrypt_password' not in session:
             if received_key == API_KEY:
-                # Safari 브라우저와 디바이스 파라미터가 올바른 경우에만 진행
-                if session.get('is_safari') == REQUIRED_BROWSER and session.get('device') == REQUIRED_DEVICE:
-                    random_password = secrets.token_hex(8)  # 랜덤 암호 생성
+                # Device 파라미터가 올바른 경우에만 진행 (세션 확인)
+                if session.get('device') == REQUIRED_DEVICE:
+                    random_password = secrets.token_hex(8)
                     session['encrypt_password'] = random_password
-                    session['authenticated'] = True  # 인증 성공 기록
+                    session['authenticated'] = True
                     encrypted_api_key = encode_string(API_KEY, random_password)
-                    # 동일한 URL로 암호화된 API 키를 포함하여 리다이렉트
-                    args_dict = request.args.to_dict()
-                    args_dict['api_key'] = encrypted_api_key
-                    # Safari와 디바이스 파라미터는 URL에서 제거
-                    if 'is_safari' in args_dict:
-                        del args_dict['is_safari']
-                    if 'device' in args_dict:
-                        del args_dict['device']
-                    return redirect(url_for(request.endpoint, **args_dict))
+                    # 리디렉션: file_browser 로, device 파라미터 제거하고 암호화된 키 사용
+                    # Linter Fix: Pass args explicitly
+                    redirect_args = {
+                        'drive': get_base_dir(),
+                        'path': request.args.get('path', ''), # Keep current path if provided
+                        'api_key': encrypted_api_key
+                    }
+                    # Linter Fix: Pass args explicitly
+                    clean_args = {k: v for k, v in redirect_args.items() if v is not None}
+                    return redirect(url_for('file_browser',
+                                            drive=clean_args.get('drive'),
+                                            path=clean_args.get('path'),
+                                            api_key=clean_args.get('api_key')))
                 else:
-                    return render_template('login.html', error="Safari 브라우저 인증이 필요합니다.")
+                    # API 키는 맞지만 device 정보가 없거나 틀린 경우
+                    return render_template('login.html', error="기기 인증(device=6030 파라미터)이 필요합니다.")
             else:
                 # API 키가 제공되었지만 맞지 않는 경우
                 if received_key:
@@ -73,30 +99,43 @@ def require_api_key(f):
                 # API 키가 제공되지 않은 경우
                 return render_template('login.html')
         else:
+            # 세션에 암호가 있는 경우 (이미 한 번 인증 후 리디렉션 된 상태)
             random_password = session['encrypt_password']
             encrypted_api_key = encode_string(API_KEY, random_password)
-            # 만약 여전히 plain API_KEY로 접속 시, 암호화된 키로 리다이렉트
-            if received_key == API_KEY:
-                if session.get('is_safari') == REQUIRED_BROWSER and session.get('device') == REQUIRED_DEVICE:
-                    session['authenticated'] = True  # 인증 성공 기록
-                    args_dict = request.args.to_dict()
-                    args_dict['api_key'] = encrypted_api_key
-                    # Safari와 디바이스 파라미터는 URL에서 제거
-                    if 'is_safari' in args_dict:
-                        del args_dict['is_safari']
-                    if 'device' in args_dict:
-                        del args_dict['device']
-                    return redirect(url_for(request.endpoint, **args_dict))
-                else:
-                    return render_template('login.html', error="Safari 브라우저 인증이 필요합니다.")
-            elif received_key == encrypted_api_key:
-                if session.get('is_safari') == REQUIRED_BROWSER and session.get('device') == REQUIRED_DEVICE:
-                    session['authenticated'] = True  # 인증 성공 기록
+
+            # 암호화된 키로 접근한 경우
+            if received_key == encrypted_api_key:
+                if session.get('device') == REQUIRED_DEVICE:
+                    session['authenticated'] = True # 확실히 인증됨
                     return f(*args, **kwargs)
                 else:
-                    return render_template('login.html', error="Safari 브라우저 인증이 필요합니다.")
+                    # 암호화 키는 맞지만 기기 정보가 없는 경우 (비정상)
+                    session.clear()
+                    return render_template('login.html', error="기기 인증 정보가 유효하지 않습니다. 다시 로그인해주세요.")
+            # 실수로 다시 plain 키로 접근한 경우 (리디렉션 필요)
+            elif received_key == API_KEY:
+                 if session.get('device') == REQUIRED_DEVICE:
+                     session['authenticated'] = True
+                     # Linter Fix: Pass args explicitly
+                     redirect_args = {
+                         'drive': get_base_dir(),
+                         'path': request.args.get('path', ''),
+                         'api_key': encrypted_api_key
+                     }
+                     # Linter Fix: Pass args explicitly
+                     clean_args = {k: v for k, v in redirect_args.items() if v is not None}
+                     return redirect(url_for('file_browser',
+                                             drive=clean_args.get('drive'),
+                                             path=clean_args.get('path'),
+                                             api_key=clean_args.get('api_key')))
+                 else:
+                     session.clear()
+                     return render_template('login.html', error="기기 인증 정보가 유효하지 않습니다. 다시 로그인해주세요.")
             else:
-                return render_template('login.html', error="인증에 실패했습니다.")
+                 # 암호화된 키도, plain 키도 아닌 경우
+                 session.clear()
+                 return render_template('login.html', error="잘못된 API 키 또는 인증 세션입니다.")
+
     return decorated
 
 @app.route('/')
@@ -104,13 +143,15 @@ def require_api_key(f):
 def file_browser():
     drive = get_base_dir()
     rel_path = request.args.get('path', '')
+    # API 키는 데코레이터 통과 시 유효함 (세션 기반 또는 암호화된 키)
+    # 템플릿에는 항상 암호화된 키를 전달 (세션에서 생성)
     encrypted_key = encode_string(API_KEY, session['encrypt_password'])
     tree_data = build_tree(drive)
     tree_html = render_tree(tree_data, drive, encrypted_key)
     entries = get_entries(drive, rel_path)
     return render_template('template.html',
                            entries=entries,
-                           api_key=encrypted_key,
+                           api_key=encrypted_key, # Always send encrypted key to template
                            current_path=rel_path,
                            tree_html=tree_html,
                            drive=drive,
@@ -395,7 +436,14 @@ def download_file():
     if drive not in ALLOWED_DRIVES:
         drive = 'E:/'
     base_dir = drive
-    rel_path = request.args.get('path')
+    # Provide default value '' and ensure rel_path is not None
+    rel_path = request.args.get('path', '')
+    if not rel_path:
+         # Handle case where path is missing or empty
+         abort(400, description="File path is required.")
+
+    # Consider using get_validated_path here for security and existence check
+    # For now, just fix the type error by ensuring rel_path is a str
     full_path = os.path.join(base_dir, rel_path)
     if os.path.isfile(full_path):
         return send_file(full_path, as_attachment=True)
@@ -414,11 +462,27 @@ def upload_file():
     if 'file' not in request.files:
         abort(400)
     file = request.files['file']
-    filename = file.filename.rsplit('.', 1)
-    new_name = f"{filename[0]}_MAC.{filename[1]}" if len(filename) == 2 else f"{file.filename}_MAC"
+    # Check if filename exists and is not None
+    if not file or not file.filename:
+        abort(400, description="Invalid file or filename.")
+
+    filename_parts = file.filename.rsplit('.', 1)
+    # Handle case with no extension or only extension
+    if len(filename_parts) == 2 and filename_parts[0]:
+        new_name = f"{filename_parts[0]}_MAC.{filename_parts[1]}"
+    elif len(filename_parts) == 1: # No extension
+        new_name = f"{file.filename}_MAC"
+    else: # Edge case, e.g., ".gitignore" -> parts = ['', 'gitignore']
+         new_name = f"_MAC.{filename_parts[1]}" # Or handle differently
+
     save_path = os.path.join(full_path, new_name)
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    file.save(save_path)
+    try:
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+        file.save(save_path)
+    except Exception as e:
+        print(f"Error saving uploaded file: {e}")
+        abort(500, description="Failed to save uploaded file.")
+
     encrypted_key = encode_string(API_KEY, session['encrypt_password'])
     return redirect(url_for('file_browser', drive=drive, path=rel_path, api_key=encrypted_key))
 
@@ -429,15 +493,29 @@ def delete_file():
     if drive not in ALLOWED_DRIVES:
         drive = 'E:/'
     base_dir = drive
-    rel_path = request.args.get('path')
+    # Provide default value '' and ensure rel_path is not None
+    rel_path = request.args.get('path', '')
+    if not rel_path:
+        # Handle case where path is missing or empty
+        abort(400, description="File path is required.")
+
+    # Consider using get_validated_path here for security and existence check
     full_path = os.path.join(base_dir, rel_path)
+
     if os.path.isfile(full_path):
-        os.remove(full_path)
-        parent_path = os.path.dirname(rel_path)
+        try:
+            os.remove(full_path)
+        except OSError as e:
+            print(f"Error deleting file {full_path}: {e}")
+            abort(500, description="Failed to delete file.")
+
+        # Handle dirname for potentially empty rel_path safely
+        parent_path = os.path.dirname(rel_path) if rel_path else ''
         encrypted_key = encode_string(API_KEY, session['encrypt_password'])
         return redirect(url_for('file_browser', drive=drive, path=parent_path, api_key=encrypted_key))
     else:
-        abort(404)
+        # Consider if deleting directories should be supported or return a different error
+        abort(404, description="File not found.")
 
 # Helper function to get full, validated path and check existence
 def get_validated_path(drive, rel_path):
@@ -667,6 +745,249 @@ def preview_pdf_file(rel_path):
         return send_file(full_path, as_attachment=False)
     else:
         abort(404)
+
+# --- Gemini Chat Endpoint --- START
+@app.route('/chat', methods=['POST'])
+@require_api_key # Ensure the user is authenticated
+def handle_chat():
+    api_key = app.config.get('GEMINI_API_KEY')
+    if not api_key:
+        return {"error": "Gemini API 키가 설정되지 않았습니다."}, 500
+
+    # Configure the Gemini client
+    try:
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        print(f"Gemini 구성 오류: {e}")
+        return {"error": "Gemini 클라이언트 설정에 실패했습니다."}, 500
+
+    # --- Handle request based on Content-Type --- START
+    history = []
+    user_message = None
+    model_name = None
+    image_part = None
+
+    content_type = request.content_type
+
+    if content_type.startswith('application/json'):
+        data = request.json
+        if data is None:
+            return {"error": "잘못된 요청 형식입니다. Content-Type은 application/json 이어야 합니다."}, 400
+        user_message = data.get('message')
+        model_name = data.get('model')
+        history = data.get('history', [])
+
+    elif content_type.startswith('multipart/form-data'):
+        user_message = request.form.get('message')
+        model_name = request.form.get('model')
+        history_str = request.form.get('history', '[]')
+        try:
+            history = json.loads(history_str)
+            if not isinstance(history, list):
+                 raise ValueError("History is not a list")
+        except (json.JSONDecodeError, ValueError) as e:
+            print(f"Error parsing history from FormData: {e}")
+            return {"error": f"잘못된 히스토리 형식입니다: {e}"}, 400
+
+        if 'image' in request.files:
+            image_file = request.files['image']
+            try:
+                # Validate MIME type briefly
+                if not image_file.mimetype.startswith('image/'):
+                    return {"error": "첨부된 파일이 이미지가 아닙니다."}, 400
+
+                # Read image data
+                image_bytes = image_file.read()
+                img = Image.open(io.BytesIO(image_bytes))
+
+                # Prepare image part for Gemini API
+                image_part = {
+                    "mime_type": image_file.mimetype,
+                    "data": image_bytes
+                }
+                print(f"[Debug] Prepared image_part: mime_type={image_part['mime_type']}, data_length={len(image_part['data'])}")
+                # Force using a vision-capable model when image is present
+                # Note: Replace with the actual latest vision model if different
+                print(f"Image detected. Forcing model to gemini-1.5-flash-latest (original: {model_name})")
+                model_name = "gemini-1.5-flash-latest" # Or gemini-pro-vision
+
+            except Exception as e:
+                print(f"Error processing uploaded image: {e}")
+                return {"error": f"이미지 처리 중 오류 발생: {e}"}, 500
+        else:
+            # FormData request but no image file found
+            return {"error": "이미지 파일이 요청에 포함되지 않았습니다."}, 400
+    else:
+         return {"error": f"지원되지 않는 Content-Type: {content_type}"}, 415
+    # --- Handle request based on Content-Type --- END
+
+    # Validate history format (basic check)
+    if not isinstance(history, list):
+         return {"error": "잘못된 히스토리 형식입니다."}, 400
+    # Add more validation if needed (e.g., check structure of each item)
+
+    if user_message is None or model_name is None: # Check for None after extraction
+        return {"error": "메시지 또는 모델 이름이 누락되었습니다."}, 400
+
+    try:
+        model = genai.GenerativeModel(model_name)
+
+        # --- Prepare content for API call --- START
+        # Combine history and the new prompt
+        # Ensure history items have the correct format {role: ..., parts: [...]} expected by API
+        # Our current JS history format matches this.
+        prompt_parts = []
+        # Ensure user_message is added as a dict part if it exists
+        if user_message:
+            prompt_parts.append({"text": user_message})
+        # Append image part AFTER text part, if it exists
+        # Gemini API prefers text before image in the parts list for multimodal input
+        if image_part: 
+            prompt_parts.append(image_part) 
+
+        if not prompt_parts:
+             return {"error": "메시지와 이미지가 모두 비어있습니다."}, 400
+
+        print(f"[Debug] Current prompt_parts (before adding to history list): {prompt_parts}") # Renamed log message
+
+        # Construct the full conversation payload for generate_content
+        validated_history = []
+        for entry in history:
+            role = entry.get('role')
+            parts = entry.get('parts')
+            if role in ['user', 'model'] and isinstance(parts, list) and parts:
+                validated_history.append({'role': role, 'parts': parts})
+            else:
+                print(f"[Warning] Skipping invalid history entry: {entry}")
+
+        contents_payload = validated_history + [{'role': 'user', 'parts': prompt_parts}]
+         
+        print(f"Sending to Gemini ({model_name}). History length: {len(validated_history)}, Image attached: {image_part is not None}")
+        print(f"[Debug] Contents Payload being sent to API:", contents_payload)
+
+        # Use generate_content which handles history and multimodality
+        # Remove the config parameter
+        response = model.generate_content(
+            contents_payload
+        )
+
+        # --- Streaming Response --- START
+        def stream_response(api_response):
+            try:
+                for chunk in api_response:
+                    if chunk.text:
+                        # Send data using Server-Sent Events (SSE) format
+                        yield f"data: {json.dumps({'response': chunk.text})}\n\n"
+            except Exception as e:
+                print(f"Error during streaming: {e}")
+                # Send an error event (optional)
+                yield f"data: {json.dumps({'error': f'스트리밍 중 오류 발생: {e}'})}\n\n"
+            finally:
+                 # Signal end of stream (optional, client can handle stream end)
+                 yield f"event: end\ndata: Stream ended\n\n"
+
+        # Check if response is streamable (depends on API/model behavior)
+        # For generate_content with stream=True, the response itself is the iterator
+        try:
+             # Call generate_content with stream=True
+             stream = model.generate_content(
+                 contents_payload,
+                 stream=True
+             )
+             # Return a streaming response
+             return Response(stream_with_context(stream_response(stream)), mimetype='text/event-stream')
+
+        except Exception as e:
+             print(f"Gemini API 스트리밍 호출 오류 ({model_name}): {e}")
+             # Return a non-streaming error if the initial call fails
+             error_detail = str(e)
+             if "API key not valid" in error_detail:
+                  error_msg = "Gemini API 키가 유효하지 않습니다. .env 파일을 확인하세요."
+             elif "quota" in error_detail.lower():
+                  error_msg = "Gemini API 할당량이 초과되었습니다."
+             else:
+                  error_msg = f"Gemini API ({model_name}) 스트리밍 호출 중 오류 발생: {error_detail}"
+             # Send error as a single JSON response for non-streaming failures
+             # Client-side fetch needs to handle this potentially non-streaming error
+             return {"error": error_msg}, 500
+        # --- Streaming Response --- END
+
+    except Exception as e:
+        # This outer try-except might catch errors before streaming starts
+        print(f"Gemini API 호출 준비 오류 ({model_name}): {e}")
+        error_detail = str(e)
+        error_msg = f"Gemini API ({model_name}) 호출 준비 중 오류 발생: {error_detail}"
+        return {"error": error_msg}, 500
+# --- Gemini Chat Endpoint --- END
+
+# --- Gemini Audio Chat Endpoint --- START
+@app.route('/chat_audio', methods=['POST'])
+@require_api_key # Ensure the user is authenticated
+def handle_audio_chat():
+    api_key = app.config.get('GEMINI_API_KEY')
+    if not api_key:
+        return {"error": "Gemini API 키가 설정되지 않았습니다."}, 500
+
+    # Configure the Gemini client
+    try:
+        genai.configure(api_key=api_key)
+    except Exception as e:
+        print(f"Gemini 구성 오류: {e}")
+        return {"error": "Gemini 클라이언트 설정에 실패했습니다."}, 500
+
+    # Check if audio file is present
+    if 'audio' not in request.files:
+        return {"error": "오디오 파일이 요청에 포함되지 않았습니다."}, 400
+
+    audio_file = request.files['audio']
+    model_name_req = request.form.get('model', 'gemini-1.5-flash-latest') # Get model from form or default
+
+    # Force an audio-capable model (adjust if needed)
+    # Note: Check Gemini documentation for the latest recommended model for audio
+    model_name = "gemini-1.5-pro-latest" # Or another suitable model
+    print(f"Audio detected. Forcing model to {model_name} (original request: {model_name_req})")
+
+    try:
+        # Prepare audio part
+        # Gemini API can often handle common web audio formats directly
+        audio_bytes = audio_file.read()
+        audio_part = {
+            "mime_type": audio_file.mimetype, # Use the mimetype sent by browser
+            "data": audio_bytes
+        }
+        print(f"[Debug] Prepared audio_part: mime_type={audio_part['mime_type']}, data_length={len(audio_part['data'])}")
+
+        # --- API Call --- #
+        model = genai.GenerativeModel(model_name)
+
+        # Simple prompt for audio - enhance as needed
+        prompt = "이 오디오 파일의 내용을 설명해주세요." 
+        contents = [prompt, audio_part]
+
+        print(f"Sending audio to Gemini ({model_name})...")
+        response = model.generate_content(contents)
+
+        # --- Handle Response --- #
+        if response and response.text:
+            print(f"Gemini audio response: {response.text[:100]}...")
+            return {"response": response.text}
+        else:
+             safety_feedback = getattr(response, 'prompt_feedback', None)
+             block_reason = getattr(safety_feedback, 'block_reason', None)
+             if block_reason:
+                 print(f"Gemini 응답 차단됨 (오디오): {block_reason}")
+                 return {"response": f"(응답이 차단되었습니다: {block_reason})"}
+             else:
+                 print(f"Gemini 로부터 빈 응답 수신 (오디오): {response}")
+                 return {"response": "(모델로부터 오디오 응답을 받지 못했습니다.)"}
+
+    except Exception as e:
+        print(f"Gemini API 오디오 호출 오류 ({model_name}): {e}")
+        error_detail = str(e)
+        # Add specific error checks if possible
+        error_msg = f"Gemini API ({model_name}) 오디오 처리 중 오류 발생: {error_detail}"
+        return {"error": error_msg}, 500
+# --- Gemini Audio Chat Endpoint --- END
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

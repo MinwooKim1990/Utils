@@ -7,434 +7,11 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-  <style>
-    :root {
-      color-scheme: light dark;
-      --bg: #f8fafc;
-      --fg: #1e293b;
-      --card: #ffffff;
-      --border: #e2e8f0;
-      --link: #3b82f6;
-      --danger: #ef4444;
-      --highlight: #f59e0b;
-      --hover: #f1f5f9;
-      --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-      --radius: 8px;
-      --transition: all 0.2s ease;
-    }
-    @media (prefers-color-scheme: dark) {
-      :root {
-        --bg: #0f172a;
-        --fg: #e2e8f0;
-        --card: #1e293b;
-        --border: #334155;
-        --link: #60a5fa;
-        --danger: #f87171;
-        --highlight: #fbbf24;
-        --hover: #1e293b;
-        --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.2), 0 2px 4px -2px rgba(0, 0, 0, 0.2);
-      }
-    }
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    body {
-      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-      display: flex;
-      height: 100vh;
-      background: var(--bg);
-      color: var(--fg);
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    .sidebar {
-      width: 280px;
-      background: var(--card);
-      padding: 16px;
-      overflow-y: auto;
-      border-right: 1px solid var(--border);
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      box-shadow: var(--shadow);
-      z-index: 10;
-    }
-    .sidebar h4 { 
-      font-weight: 600;
-      font-size: 16px;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .drive-selector { 
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-    .drive-selector a {
-      padding: 8px 12px;
-      background: var(--link);
-      color: white;
-      border-radius: var(--radius);
-      text-decoration: none;
-      font-weight: 500;
-      transition: var(--transition);
-      font-size: 14px;
-    }
-    .drive-selector a:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
-    .drive-selector a.selected {
-      background: var(--highlight);
-      font-weight: 600;
-    }
-    .tree {
-      overflow-y: auto;
-      flex-grow: 1;
-    }
-    .tree ul { 
-      list-style: none; 
-      padding-left: 16px; 
-    }
-    .tree li { 
-      margin: 6px 0; 
-      cursor: pointer; 
-      font-size: 14px; 
-      transition: var(--transition);
-    }
-    .tree li:hover {
-      color: var(--link);
-    }
-    .tree li span {
-      display: inline-flex;
-      align-items: center;
-      transition: var(--transition);
-      cursor: pointer;
-    }
-    .tree li span:hover {
-      transform: scale(1.1);
-    }
-    .tree li a.folder-link {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      display: inline-block;
-      max-width: 200px;
-      vertical-align: middle;
-      transition: var(--transition);
-    }
-    .tree li.expanded > a.folder-link {
-      font-weight: 600;
-      color: var(--highlight);
-    }
-    .tree li a.file-link {
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      display: inline-block;
-      max-width: 200px;
-      vertical-align: middle;
-    }
-    .sidebar a { 
-      text-decoration: none; 
-      color: var(--link); 
-    }
-    .sidebar a:hover { 
-      opacity: 0.9;
-    }
-    .content {
-      flex-grow: 1;
-      padding: 24px;
-      background: var(--bg);
-      box-sizing: border-box;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      height: 100vh; /* 전체 창 높이 고정 */
-      /* overflow-y 제거 */
-    }
-    .top-bar {
-      display: flex;
-      gap: 16px;
-      flex-wrap: wrap;
-    }
-    .nav-buttons {
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    button {
-      padding: 8px 16px;
-      background: var(--link);
-      color: white;
-      border: none;
-      border-radius: var(--radius);
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: var(--transition);
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-    button:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
-    .search-bar { 
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 8px 16px;
-      box-shadow: var(--shadow);
-    }
-    .search-bar input {
-      flex-grow: 1;
-      border: none;
-      outline: none;
-      background: transparent;
-      color: var(--fg);
-      font-size: 14px;
-      padding: 4px 0;
-    }
-    .sort-buttons {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 8px 16px;
-      box-shadow: var(--shadow);
-    }
-    .sort-buttons span {
-      font-weight: 500;
-    }
-    .sort-buttons a {
-      text-decoration: none;
-      color: var(--link);
-      font-weight: normal;
-      transition: var(--transition);
-      padding: 4px 8px;
-      border-radius: var(--radius);
-    }
-    .sort-buttons a:hover {
-      background: var(--hover);
-    }
-    .sort-buttons a.selected {
-      font-weight: 600;
-      color: var(--highlight);
-    }
-    .location-bar {
-      background: var(--card);
-      border-radius: var(--radius);
-      padding: 12px 16px;
-      box-shadow: var(--shadow);
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    .location-bar h3 {
-      font-size: 16px;
-      font-weight: 600;
-    }
-    .file-list {
-      background: var(--card);
-      border-radius: var(--radius);
-      box-shadow: var(--shadow);
-      /* overflow-y: auto;  스크롤 제거 */
-      max-height: calc(100vh - 250px); /* 필요 시 높이 조절 */
-    }
-    .file-list ul {
-      list-style: none;
-      padding: 0;
-      margin: 0;
-    }
-    .file-entry {
-      display: flex;
-      align-items: center;
-      padding: 10px 16px;
-      border-bottom: 1px solid var(--border);
-      transition: var(--transition);
-      gap: 12px;
-      position: relative;
-    }
-    .file-entry:hover {
-      background: var(--hover);
-    }
-    .file-icon {
-      font-size: 20px;
-      flex-shrink: 0;
-    }
-    .file-name {
-      font-weight: 500;
-      flex-grow: 1;
-      max-width: 50%;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
-    }
-    .file-actions {
-      display: flex;
-      gap: 8px;
-    }
-    .file-entry a { 
-      color: var(--link); 
-      text-decoration: none; 
-      transition: var(--transition);
-      padding: 4px 8px;
-      border-radius: var(--radius);
-    }
-    .file-entry a:hover { 
-      background: var(--link);
-      color: white;
-    }
-    .file-entry a.delete-link {
-      color: var(--danger);
-    }
-    .file-entry a.delete-link:hover {
-      background: var(--danger);
-      color: white;
-    }
-    .file-info {
-      margin-left: auto;
-      text-align: right;
-      color: var(--fg);
-      opacity: 0.8;
-      font-size: 0.9em;
-    }
-    .thumb { 
-      height: 40px; 
-      width: 40px;
-      object-fit: cover;
-      border-radius: var(--radius); 
-      box-shadow: var(--shadow);
-    }
-    #drop-area {
-      border: 2px dashed var(--border);
-      border-radius: var(--radius);
-      padding: 24px;
-      text-align: center;
-      transition: var(--transition);
-      background: var(--card);
-      box-shadow: var(--shadow);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 16px;
-    }
-    #drop-area.highlight {
-      border-color: var(--link);
-      background: var(--hover);
-    }
-    #drop-area p {
-      margin: 0;
-    }
-    #drop-area form {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      width: 100%;
-      max-width: 400px;
-    }
-    #upload-progress {
-      width: 100%;
-      margin-top: 16px;
-    }
-    #file-list {
-      flex: 1;           /* 파일 목록 영역이 남은 공간을 채우도록 */
-      overflow-y: auto;  /* 이 영역만 스크롤 */
-    }
-    .progress-item {
-      margin-bottom: 8px;
-      background: var(--hover);
-      border-radius: var(--radius);
-      padding: 8px;
-      overflow: hidden;
-    }
-    .progress-bar {
-      width: 0%;
-      height: 8px;
-      background-color: var(--link);
-      border-radius: 4px;
-      margin-top: 8px;
-      transition: width 0.2s;
-    }
-    /* --- Preview Modal Styles --- START */
-    #preview-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      background-color: rgba(0, 0, 0, 0.75); /* Dark semi-transparent background */
-      display: none; /* Hidden by default */
-      align-items: center;
-      justify-content: center;
-      z-index: 1000; /* Ensure it's on top */
-      padding: 20px;
-      box-sizing: border-box;
-    }
-    #preview-content {
-      position: relative;
-      background-color: var(--card, #fff); /* Use theme color */
-      padding: 20px;
-      border-radius: var(--radius);
-      box-shadow: 0 5px 15px rgba(0,0,0,0.3);
-      max-width: 95vw;
-      max-height: 90vh;
-      overflow: auto; /* Add scroll if content overflows */
-      display: flex;       /* Use flexbox to center content */
-      align-items: center;
-      justify-content: center;
-    }
-    #preview-close-btn {
-      position: absolute;
-      top: 15px;
-      right: 20px;
-      background: none;
-      border: none;
-      color: white;
-      font-size: 30px;
-      font-weight: bold;
-      cursor: pointer;
-      line-height: 1;
-      padding: 0 5px;
-      text-shadow: 0 1px 2px rgba(0,0,0,0.5);
-    }
-    #preview-close-btn:hover {
-      color: #ddd;
-    }
-    #preview-filename {
-        position: absolute;
-        bottom: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        color: white;
-        background-color: rgba(0, 0, 0, 0.6);
-        padding: 5px 15px;
-        border-radius: var(--radius);
-        font-size: 14px;
-        text-align: center;
-        max-width: 80%;
-        white-space: nowrap;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-    /* Ensure video/audio controls are visible in dark mode */
-    @media (prefers-color-scheme: dark) {
-      #preview-content video::-webkit-media-controls-panel,
-      #preview-content audio::-webkit-media-controls-panel {
-        background-color: rgba(50, 50, 50, 0.9);
-      }
-    }
-    /* --- Preview Modal Styles --- END */
-  </style>
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Add Marked.js library -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <!-- Add DOMPurify library for sanitization -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.11/dist/purify.min.js"></script>
 </head>
 <body>
     <div class="sidebar">
@@ -480,26 +57,70 @@
       <div class="location-bar">
         <h3>📂 현재 위치 (드라이브: {{ drive[:-2] }}): {{ current_path or '/' }}</h3>
       </div>
-      <div id="file-list" class="file-list">
-        {% if is_search %}
-          <h2>Search Results for "{{ search_query }}" in {{ current_path or 'root' }}</h2>
-          {% include 'search_results.html' %}
-        {% else %}
-          <h2>Files in {{ current_path or 'root' }}</h2>
-          {% include 'file_list.html' %}
-        {% endif %}
+
+      <!-- New Wrapper for File List and Chat -->
+      <div class="content-wrapper">
+        <!-- Existing File Content Area -->
+        <div class="main-content">
+            <div id="file-list" class="file-list">
+                {% if is_search %}
+                    <h2>Search Results for "{{ search_query }}" in {{ current_path or 'root' }}</h2>
+                    {% include 'search_results.html' %}
+                {% else %}
+                    <h2>Files in {{ current_path or 'root' }}</h2>
+                    {% include 'file_list.html' %}
+                {% endif %}
+            </div>
+            <!-- 드래그 앤 드롭 업로드 영역 -->
+            <div id="drop-area">
+                <p>파일을 여기에 끌어다 놓으세요.</p>
+                <p>또는 아래 버튼을 사용하여 파일을 선택할 수 있습니다.</p>
+                <form method="POST" action="/upload?drive={{ drive }}&api_key={{ api_key }}&path={{ current_path }}" enctype="multipart/form-data">
+                    <input type="file" name="file">
+                    <button type="submit">업로드</button>
+                </form>
+                <div id="upload-progress"></div>
+            </div>
+        </div>
+
+        <!-- New Chat Interface Area -->
+        <div id="chat-container">
+            <h4>💬 Gemini Chat</h4>
+            <!-- Model Selector Dropdown -->
+            <div class="model-selector">
+                <label for="model-select">모델 선택:</label>
+                <select id="model-select">
+                    <option value="gemini-2.0-flash-lite" selected>gemini-2.0-flash-lite</option>
+                    <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp-03-25</option>
+                </select>
+            </div>
+            <div id="chat-messages">
+                <!-- Chat messages will appear here -->
+            </div>
+            <!-- Image preview area -->
+            <div id="image-preview-area" style="display: none;">
+                <img id="image-preview" src="#" alt="Image preview"/>
+                <span id="image-filename"></span>
+                <button id="remove-image-button" title="이미지 제거">&times;</button>
+            </div>
+            <!-- Mic status indicator -->
+            <span id="mic-status"></span>
+            <div id="chat-input-area">
+                <!-- Hidden file input -->
+                <input type="file" id="image-upload" accept="image/*">
+                <!-- Image upload button -->
+                <button id="image-upload-button" title="이미지 첨부">🖼️</button>
+                <!-- Mic button -->
+                <button id="mic-button" title="음성 입력">🎤</button>
+                <input type="text" id="chat-input" placeholder="메시지를 입력하세요...">
+                <button id="send-button">전송</button>
+            </div>
+        </div>
       </div>
-      <!-- 드래그 앤 드롭 업로드 영역 -->
-      <div id="drop-area">
-        <p>파일을 여기에 끌어다 놓으세요.</p>
-        <p>또는 아래 버튼을 사용하여 파일을 선택할 수 있습니다.</p>
-        <form method="POST" action="/upload?drive={{ drive }}&api_key={{ api_key }}&path={{ current_path }}" enctype="multipart/form-data">
-          <input type="file" name="file">
-          <button type="submit">업로드</button>
-        </form>
-        <div id="upload-progress"></div>
-      </div>
-    </div>
+      <!-- End New Wrapper -->
+
+    </div> <!-- End .content -->
 
     <!-- Preview Modal Overlay -->
     <div id="preview-overlay" style="display: none;">
@@ -816,6 +437,448 @@
         }
       });
       // --- Preview Modal Functions --- END
+
+      // --- Chat Functionality --- START
+      const chatMessages = document.getElementById('chat-messages');
+      const chatInput = document.getElementById('chat-input');
+      const sendButton = document.getElementById('send-button');
+      const modelSelect = document.getElementById('model-select');
+      const imageUploadButton = document.getElementById('image-upload-button');
+      const imageUploadInput = document.getElementById('image-upload');
+      const imagePreviewArea = document.getElementById('image-preview-area');
+      const imagePreview = document.getElementById('image-preview');
+      const imageFilename = document.getElementById('image-filename');
+      const removeImageButton = document.getElementById('remove-image-button');
+      const micButton = document.getElementById('mic-button');
+      const micStatus = document.getElementById('mic-status');
+
+      // --- Chat History --- START
+      let chatHistory = []; // Stores { role: 'user'/'model', parts: [{ text: '...' }] }
+      const MAX_HISTORY_LENGTH = 20; // 10 turns (user + model)
+      // Store attached image data
+      let attachedImageData = null;
+
+      function pruneHistory() {
+          if (chatHistory.length > MAX_HISTORY_LENGTH) {
+              // Remove the oldest two messages (one turn)
+              chatHistory = chatHistory.slice(chatHistory.length - MAX_HISTORY_LENGTH);
+          }
+      }
+      // --- Chat History --- END
+
+      function addMessageToChat(message, sender, imageUrl = null) {
+        const messageElement = document.createElement('div');
+        messageElement.classList.add('message');
+        messageElement.classList.add(sender === 'user' ? 'user-message' : 'assistant-message');
+
+        // Render Markdown for assistant messages, sanitize output
+        if (sender === 'assistant') {
+            // Configure marked to add line breaks for newlines
+            marked.setOptions({
+                breaks: true
+            });
+            const rawHtml = marked.parse(message);
+            messageElement.innerHTML = DOMPurify.sanitize(rawHtml);
+        } else {
+            // For user messages, just set text content
+            messageElement.textContent = message;
+        }
+
+        // If it's a user message with an image URL, add image preview
+        if (sender === 'user' && imageUrl) {
+            const imgElement = document.createElement('img');
+            imgElement.src = imageUrl;
+            imgElement.alt = "Attached Image";
+            imgElement.classList.add('attached-image-thumb');
+            messageElement.appendChild(imgElement);
+        }
+
+        chatMessages.appendChild(messageElement);
+        chatMessages.scrollTop = chatMessages.scrollHeight;
+
+        // Add to history
+        const newHistoryEntry = { role: (sender === 'user' ? 'user' : 'model'), parts: [] };
+        if (message) {
+            newHistoryEntry.parts.push({ text: message });
+        }
+        // For user messages, add image placeholder/url if it existed for this turn
+        // Note: We don't store the full image data in JS history for efficiency.
+        // The backend uses the *currently* uploaded image.
+        if (sender === 'user' && imageUrl) {
+            // Optionally add a marker or the data URL (if small enough and needed for display)
+            // For API context, backend relies on the currently uploaded image + text.
+            // Let's just keep the text part for simplicity in JS history for now,
+            // as the backend reconstructs the prompt correctly.
+            // If context across multiple images becomes necessary, this needs revisiting.
+            ;
+        }
+
+        // Only add if parts is not empty (e.g., avoid empty model responses)
+        if (newHistoryEntry.parts.length > 0) {
+            chatHistory.push(newHistoryEntry);
+            pruneHistory(); // Keep history within limit
+        }
+      }
+
+      // Function to update the last assistant message (for streaming)
+      function updateLastAssistantMessage(textChunk) {
+          let lastMessageElement = chatMessages.querySelector('.assistant-message:last-child');
+
+          // If no last assistant message exists or it already contains final content,
+          // create a new one for the stream.
+          if (!lastMessageElement || lastMessageElement.dataset.streaming !== 'true') {
+              lastMessageElement = document.createElement('div');
+              lastMessageElement.classList.add('message', 'assistant-message');
+              lastMessageElement.dataset.streaming = 'true'; // Mark as streaming
+              chatMessages.appendChild(lastMessageElement);
+          }
+
+          // Append the chunk using Markdown rendering (or simple text)
+          // Note: Appending raw HTML chunk by chunk can be tricky with Markdown.
+          // It might be better to accumulate text and render at the end, or use a library that supports streaming markdown.
+          // For now, let's just append text content for simplicity during streaming.
+          // We can render the full markdown once the stream ends.
+          lastMessageElement.textContent += textChunk;
+
+          // Keep scrolled to bottom
+          chatMessages.scrollTop = chatMessages.scrollHeight;
+      }
+
+      // Function to finalize the last message (render Markdown and add to history)
+      function finalizeLastAssistantMessage() {
+           let lastMessageElement = chatMessages.querySelector('.assistant-message:last-child[data-streaming="true"]');
+           if (lastMessageElement) {
+               delete lastMessageElement.dataset.streaming; // Remove streaming marker
+               const fullText = lastMessageElement.textContent; // Get accumulated text
+
+               // Render final Markdown
+               marked.setOptions({ breaks: true });
+               const rawHtml = marked.parse(fullText);
+               lastMessageElement.innerHTML = DOMPurify.sanitize(rawHtml);
+
+               // Add the complete message to history
+               chatHistory.push({ role: 'model', parts: [{ text: fullText }] });
+               pruneHistory();
+
+               chatMessages.scrollTop = chatMessages.scrollHeight; // Ensure scroll after render
+           }
+      }
+
+      // Modify the fetch call slightly to handle headers conditionally
+      async function sendMessage() {
+        const message = chatInput.value.trim();
+        const selectedModel = modelSelect.value;
+
+        if (!message && !attachedImageData) return; // Don't send if both empty
+
+        console.log("[Debug] sendMessage START - attachedImageData:", attachedImageData);
+
+        // Add user message to chat UI
+        const imagePreviewUrl = attachedImageData ? imagePreview.src : null;
+        addMessageToChat(message || ' ', 'user', imagePreviewUrl); // Send space if only image
+
+        // Prepare payload
+        const payload = createChatPayload(message, selectedModel, chatHistory.slice(0, -1));
+
+        console.log("[Debug] sendMessage AFTER createChatPayload - attachedImageData:", attachedImageData);
+
+        // Clear input and image *after* preparing payload
+        // Keep a reference to the image data for the current request
+        const imageToSend = attachedImageData;
+        chatInput.value = ''; // Clear text input
+        // clearAttachedImage(); // Moved to finally block
+
+        sendButton.disabled = true;
+
+        try {
+          // Add a temporary thinking message
+          addMessageToChat("...", 'assistant');
+          const thinkingMessageElement = chatMessages.lastElementChild;
+
+          const fetchOptions = {
+            method: 'POST',
+            body: payload,
+            // headers property will be added conditionally below
+          };
+
+          console.log("[Debug] Payload type:", typeof payload);
+
+          // Set Content-Type ONLY for JSON payloads
+          // For FormData, browser sets it automatically including the boundary
+          if (!(payload instanceof FormData)) {
+            console.log("[Debug] Setting Content-Type to application/json");
+            fetchOptions.headers = { 'Content-Type': 'application/json' };
+          }
+          else {
+            console.log("[Debug] Sending as FormData (no explicit Content-Type header)");
+            // No headers property needed, browser handles it
+          }
+
+          console.log("[Debug] Fetch options:", fetchOptions); // Log the final options
+
+          const response = await fetch('/chat', fetchOptions);
+
+          // Remove thinking message
+          if (thinkingMessageElement) {
+             chatMessages.removeChild(thinkingMessageElement);
+          }
+
+          // --- Handle Streaming Response --- START
+          if (response.ok && response.headers.get('Content-Type')?.includes('text/event-stream')) {
+              const reader = response.body.getReader();
+              const decoder = new TextDecoder();
+              let buffer = '';
+              let eventText = ''; // Declare eventText outside the inner loop
+
+              while (true) {
+                  const { value, done } = await reader.read();
+                  if (done) {
+                      console.log("Stream finished.");
+                      finalizeLastAssistantMessage(); // Finalize last message render and history
+                      break;
+                  }
+
+                  buffer += decoder.decode(value, { stream: true });
+
+                  // Process buffer line by line for SSE events
+                  let boundary = buffer.indexOf('\n\n');
+                  while (boundary !== -1) {
+                      eventText = buffer.substring(0, boundary); // Assign to outer variable
+                      buffer = buffer.substring(boundary + 2);
+
+                      if (eventText.startsWith('event: end')) {
+                          console.log("Received end event from server.");
+                          // Server signaled end, finalize might already be called by 'done'
+                          finalizeLastAssistantMessage();
+                          break; // Exit inner loop too
+                      }
+                      if (eventText.startsWith('data: ')) {
+                          const jsonData = eventText.substring(6);
+                          try {
+                              const data = JSON.parse(jsonData);
+                              if (data.response) {
+                                  updateLastAssistantMessage(data.response);
+                              } else if (data.error) {
+                                  console.error("Streaming Error from Server:", data.error);
+                                  updateLastAssistantMessage(`\n[오류: ${data.error}]`);
+                                  // Should we finalize here or let 'done' handle it?
+                                  // Let's finalize to ensure history is saved.
+                                  finalizeLastAssistantMessage();
+                              }
+                          } catch (e) {
+                              console.error("Error parsing SSE data:", e, "Data:", jsonData);
+                          }
+                      }
+                       boundary = buffer.indexOf('\n\n');
+                  }
+                  if (eventText && eventText.startsWith('event: end')) break; // Exit outer loop if end event received
+              }
+          } else { // Handle non-streaming response (e.g., initial error)
+               if (!response.ok) {
+                   let errorMsg = `Error: ${response.statusText}`;
+                   try {
+                       const errorData = await response.json();
+                       errorMsg = `Error: ${errorData.error || response.statusText}`;
+                   } catch (e) { /* Ignore if response is not JSON */ }
+                   addMessageToChat(errorMsg, 'assistant');
+               } else {
+                  // Unexpected non-streaming success?
+                  const data = await response.json();
+                  addMessageToChat(data.response || "(예상치 못한 응답 형식)", 'assistant');
+               }
+          }
+          // --- Handle Streaming Response --- END
+
+        } catch (error) {
+            // Catch network errors or other JS errors during fetch/streaming
+            // Remove thinking message even on network error
+            const thinkingMessageElement = chatMessages.querySelector('.assistant-message:last-child'); // Find it again
+            if (thinkingMessageElement && thinkingMessageElement.textContent === '...') {
+                chatMessages.removeChild(thinkingMessageElement);
+            }
+            console.error('Chat Error:', error);
+            addMessageToChat('오류가 발생했습니다. 다시 시도해주세요.', 'assistant');
+        } finally {
+            // Clear the image AFTER the request is complete (success or error)
+            clearAttachedImage();
+            sendButton.disabled = false; // Re-enable button
+        }
+      }
+
+      // Event listeners
+      sendButton.addEventListener('click', sendMessage);
+      chatInput.addEventListener('keypress', function(event) {
+        if (event.key === 'Enter') {
+          // Prevent sending if shift+enter is pressed (for potential multiline input later)
+          if (!event.shiftKey) {
+            sendMessage();
+            event.preventDefault(); // Prevent default newline in input
+          }
+        }
+      });
+      // Image Upload listeners
+      imageUploadButton.addEventListener('click', () => {
+          if (isRecording) return; // Prevent action while recording
+          imageUploadInput.click(); // Trigger hidden file input
+      });
+
+      imageUploadInput.addEventListener('change', handleImageFileSelect);
+      removeImageButton.addEventListener('click', clearAttachedImage);
+
+      // --- Audio Recording Logic --- START
+      let mediaRecorder;
+      let audioChunks = [];
+      let isRecording = false;
+
+      micButton.addEventListener('click', toggleRecording);
+
+      async function toggleRecording() {
+          if (isRecording) {
+              // Stop recording
+              mediaRecorder.stop();
+              isRecording = false;
+              micButton.classList.remove('recording');
+              micButton.disabled = true; // Disable while processing
+              micStatus.textContent = '처리 중...';
+          } else {
+              // Start recording
+              try {
+                  const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                  mediaRecorder = new MediaRecorder(stream);
+
+                  mediaRecorder.ondataavailable = event => {
+                      audioChunks.push(event.data);
+                  };
+
+                  mediaRecorder.onstop = async () => {
+                      const audioBlob = new Blob(audioChunks, { type: 'audio/ogg; codecs=opus' }); // Or detect type
+                      audioChunks = []; // Reset chunks
+                      stream.getTracks().forEach(track => track.stop()); // Release microphone
+                      await sendAudioData(audioBlob);
+                      micButton.disabled = false; // Re-enable after processing
+                      micStatus.textContent = ''; // Clear status
+                  };
+
+                  mediaRecorder.start();
+                  isRecording = true;
+                  micButton.classList.add('recording');
+                  micStatus.textContent = '녹음 중...';
+                  // Disable other inputs while recording
+                  chatInput.disabled = true;
+                  sendButton.disabled = true;
+                  imageUploadButton.disabled = true;
+
+              } catch (err) {
+                  console.error("마이크 접근 오류:", err);
+                  micStatus.textContent = '마이크 오류';
+                  alert(`마이크 접근에 실패했습니다: ${err.message}`);
+              }
+          }
+      }
+
+      async function sendAudioData(audioBlob) {
+          const selectedModel = modelSelect.value;
+          const formData = new FormData();
+          formData.append('audio', audioBlob, 'recorded_audio.ogg'); // Add filename
+          formData.append('model', selectedModel);
+
+          addMessageToChat("(음성 입력 전송됨)", 'user'); // Placeholder message
+
+          try {
+              addMessageToChat("...", 'assistant');
+              const thinkingMessageElement = chatMessages.lastElementChild;
+
+              const response = await fetch('/chat_audio', {
+                  method: 'POST',
+                  body: formData // FormData sets Content-Type automatically
+              });
+
+              // Remove thinking message
+              if (thinkingMessageElement) {
+                  chatMessages.removeChild(thinkingMessageElement);
+              }
+
+              if (!response.ok) {
+                  let errorMsg = `오디오 처리 오류: ${response.statusText}`;
+                  try {
+                      const errorData = await response.json();
+                      errorMsg = `오디오 처리 오류: ${errorData.error || response.statusText}`;
+                  } catch (e) { /* Ignore */ }
+                  addMessageToChat(errorMsg, 'assistant');
+              } else {
+                  const data = await response.json();
+                  addMessageToChat(data.response, 'assistant');
+              }
+          } catch (error) {
+              const thinkingMessageElement = chatMessages.querySelector('.assistant-message:last-child');
+              if (thinkingMessageElement && thinkingMessageElement.textContent === '...') {
+                  chatMessages.removeChild(thinkingMessageElement);
+              }
+              console.error('Audio Chat Error:', error);
+              addMessageToChat('오디오 처리 중 오류 발생.', 'assistant');
+          } finally {
+             // Re-enable inputs after processing
+             chatInput.disabled = false;
+             sendButton.disabled = false;
+             imageUploadButton.disabled = false;
+             micButton.disabled = false;
+             micStatus.textContent = '';
+          }
+      }
+      // --- Audio Recording Logic --- END
+
+      function handleImageFileSelect(event) {
+          const file = event.target.files[0];
+          if (file && file.type.startsWith('image/')) {
+              attachedImageData = file; // Store the file object
+
+              // Show preview
+              const reader = new FileReader();
+              reader.onload = function(e) {
+                  imagePreview.src = e.target.result;
+                  imageFilename.textContent = file.name;
+                  imagePreviewArea.style.display = 'flex';
+              }
+              reader.readAsDataURL(file);
+          } else {
+              // Clear if invalid file selected
+              clearAttachedImage();
+              alert('이미지 파일만 선택해주세요.');
+          }
+          // Reset input value so the same file can be selected again after removal
+          imageUploadInput.value = null;
+      }
+
+      function clearAttachedImage() {
+          attachedImageData = null;
+          imagePreview.src = '#';
+          imageFilename.textContent = '';
+          imagePreviewArea.style.display = 'none';
+          imageUploadInput.value = null; // Also clear the input
+      }
+
+      // Helper function to create payload (JSON or FormData)
+      function createChatPayload(message, model, history) {
+          console.log("[Debug] createChatPayload ENTER - attachedImageData:", attachedImageData);
+          if (attachedImageData) {
+              console.log("[Debug] createChatPayload: Creating FormData.");
+              const formData = new FormData();
+              formData.append('message', message || ''); // Send empty string if no text
+              formData.append('model', model);
+              formData.append('history', JSON.stringify(history)); // History as JSON string
+              formData.append('image', attachedImageData); // Add image file
+              // Content-Type header is set automatically by browser for FormData
+              return formData;
+          } else {
+              console.log("[Debug] createChatPayload: Creating JSON string.");
+              // Standard JSON payload for text-only messages
+              const body = JSON.stringify({ message, model, history });
+              return body; // Just return body, headers handled in fetch
+          }
+      }
+
+      // --- Chat Functionality --- END
+
     </script>
 </body>
 </html>
