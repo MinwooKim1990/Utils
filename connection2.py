@@ -328,6 +328,23 @@ def get_entries(drive, rel_path):
         print(f"[get_entries] Unexpected error scanning directory '{full_path}': {e}")
         # Keep returning empty list for now, but log the error
     
+    # Add parent directory entry if not in root
+    if rel_path:
+        parent_path = os.path.dirname(rel_path).replace("\\", "/")
+        # Ensure root path is represented correctly (empty string)
+        if parent_path == ".": parent_path = ""
+        entries.insert(0, {
+            'name': '..',
+            'is_dir': True,
+            'rel_path': parent_path,
+            'is_image': False,
+            'size': 0,
+            'formatted_size': '',
+            'mod_time': '',
+            'mod_timestamp': 0 # Put at the beginning regardless of sort?
+            # Or assign a very small timestamp to sort first by date asc
+        })
+
     # Get sort parameter and direction
     sort_param = request.args.get('sort', 'name')
     sort_dir = request.args.get('dir', 'asc')  # Default to ascending

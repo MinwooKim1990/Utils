@@ -5,7 +5,7 @@
       {% for entry in entries %}
         <li class="file-entry" data-is-dir="{{ entry.is_dir|string|lower }}" {% if not entry.is_dir %}data-rel-path="{{ entry.rel_path }}"{% endif %}>
           {% if entry.is_dir %}
-            <div class="file-icon">📁</div>
+            <div class="file-icon">{% if entry.name == '..' %}⤴️{% else %}📁{% endif %}</div>
             <a href="/?drive={{ drive }}&path={{ entry.rel_path }}&api_key={{ api_key }}">{{ entry.name }}</a>
           {% else %}
             <div class="file-icon">

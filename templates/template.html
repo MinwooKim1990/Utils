@@ -85,7 +85,10 @@
 
         <!-- New Chat Interface Area -->
         <div id="chat-container">
-            <h4>💬 Gemini Chat</h4>
+            <div id="chat-header">
+                <h4>💬 Gemini Chat</h4>
+                <button id="refresh-chat-button" title="새 대화 시작">🔄</button>
+            </div>
             <!-- Model Selector Dropdown -->
             <div class="model-selector">
                 <label for="model-select">모델 선택:</label>
@@ -451,6 +454,7 @@
       const removeImageButton = document.getElementById('remove-image-button');
       const micButton = document.getElementById('mic-button');
       const micStatus = document.getElementById('mic-status');
+      const refreshChatButton = document.getElementById('refresh-chat-button');
 
       // --- Chat History --- START
       let chatHistory = []; // Stores { role: 'user'/'model', parts: [{ text: '...' }] }
@@ -878,6 +882,48 @@
       }
 
       // --- Chat Functionality --- END
+
+      // Add event listener for clicks within the main file list area
+      document.getElementById('file-list').addEventListener('click', function(e) {
+          // Check if a folder link inside the list was clicked
+          let target = e.target.closest('a'); // Find the nearest ancestor anchor tag
+          if (target && target.closest('.file-entry[data-is-dir="true"]')) { // Ensure it's a directory entry's link
+              e.preventDefault(); // Prevent default page navigation
+              const path = target.getAttribute('href').split('path=')[1].split('&')[0]; // Extract path from href
+              const decodedPath = decodeURIComponent(path); // Decode the path
+              loadFileList(decodedPath); // Load content using AJAX
+          }
+      });
+
+      // Refresh chat listener
+      refreshChatButton.addEventListener('click', clearChat);
+
+      function clearChat() {
+          console.log("Clearing chat...");
+          // Clear message display
+          chatMessages.innerHTML = '';
+          // Clear JS history
+          chatHistory = [];
+          // Clear attached image/preview
+          clearAttachedImage();
+          // Clear input field
+          chatInput.value = '';
+          // Add initial message back (optional)
+          addMessageToChat("안녕하세요! 무엇을 도와드릴까요?", 'assistant');
+          // Ensure buttons are enabled (in case they were disabled)
+          sendButton.disabled = false;
+          micButton.disabled = false;
+          imageUploadButton.disabled = false;
+          chatInput.disabled = false;
+          // Reset mic status if needed
+          if (isRecording) {
+              // Handle stopping recording if refresh is clicked during recording
+              mediaRecorder?.stop(); // Stop if active
+              isRecording = false;
+              micButton.classList.remove('recording');
+          }
+          micStatus.textContent = '';
+      }
 
     </script>
 </body>
