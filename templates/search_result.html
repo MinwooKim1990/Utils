@@ -1,0 +1,58 @@
+<div class="file-list search-results">
+    <ul>
+      {% set entries = entries | default([]) %}
+      {% if entries %}
+        {% for entry in entries %}
+          <li class="file-entry" data-is-dir="false" data-rel-path="{{ entry.rel_path }}">
+            {# File icon - always a file in search results #}
+            <div class="file-icon">
+              {% if entry.is_image %}🖼️{% else %}📄{% endif %}
+            </div>
+            
+            {# Display image thumbnail if applicable #}
+            {% if entry.is_image %}
+              <img src="{{ url_for('download_file', drive=drive, path=entry.rel_path, api_key=api_key) }}" class="thumb" loading="lazy">
+            {% endif %}
+            
+            {# File Name and Path #}
+            <span class="file-name-path">
+               <span class="file-name">{{ entry.name }}</span>
+               <span class="parent-path">(in: {{ entry.parent_path or '/' }})</span> {# Show parent path #}
+            </span>
+            
+            {# Actions: Download and Delete #}
+            <div class="file-actions">
+              <a href="{{ url_for('download_file', drive=drive, path=entry.rel_path, api_key=api_key) }}" class="action-link">Download</a>
+              <a href="{{ url_for('delete_file', drive=drive, path=entry.rel_path, api_key=api_key) }}" 
+                 onclick="return confirm('Are you sure you want to delete {{ entry.name }}?');" 
+                 class="action-link delete-link">Delete</a>
+              {# Link to navigate to the folder containing the file #}
+               <a href="{{ url_for('file_browser', drive=drive, path=entry.parent_path, api_key=api_key) }}" class="action-link">Go to Folder</a>
+            </div>
+  
+            {# File Info: Date and Size #}
+            <span class="file-info">{{ entry.mod_time }} / {{ entry.formatted_size }}</span>
+          </li>
+        {% endfor %}
+      {% else %}
+        <li class="empty-message">No files found matching your query "{{ search_query }}".</li>
+      {% endif %}
+    </ul>
+  </div>
+  
+  <style>
+  /* Add some specific styles for search results if needed */
+  .search-results .parent-path {
+    font-size: 0.9em;
+    color: #888;
+    margin-left: 10px;
+  }
+  .search-results .file-name-path {
+    display: inline-block; /* Or flex */
+    align-items: baseline;
+  }
+  .search-results .action-link {
+    margin-left: 5px; /* Add some spacing between action links */
+  }
+  
+  </style>

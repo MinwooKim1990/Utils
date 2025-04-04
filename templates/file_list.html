@@ -1,0 +1,32 @@
+<div class="file-list">
+  <ul>
+    {% set entries = entries | default([]) %}
+    {% if entries %}
+      {% for entry in entries %}
+        <li class="file-entry" data-is-dir="{{ entry.is_dir|string|lower }}" {% if not entry.is_dir %}data-rel-path="{{ entry.rel_path }}"{% endif %}>
+          {% if entry.is_dir %}
+            <div class="file-icon">📁</div>
+            <a href="/?drive={{ drive }}&path={{ entry.rel_path }}&api_key={{ api_key }}">{{ entry.name }}</a>
+          {% else %}
+            <div class="file-icon">
+              {% if entry.is_image %}🖼️{% else %}📄{% endif %}
+            </div>
+            {% if entry.is_image %}
+              <img src="/download?drive={{ drive }}&path={{ entry.rel_path }}&api_key={{ api_key }}" class="thumb" loading="lazy">
+            {% endif %}
+            <span class="file-name">{{ entry.name }}</span>
+            <div class="file-actions">
+              <a href="/download?drive={{ drive }}&path={{ entry.rel_path }}&api_key={{ api_key }}">다운로드</a>
+              <a href="/delete?drive={{ drive }}&path={{ entry.rel_path }}&api_key={{ api_key }}" 
+                 onclick="return confirm('정말 삭제하시겠습니까?');" 
+                 class="delete-link">삭제</a>
+            </div>
+            <span class="file-info">{{ entry.mod_time }} / {{ entry.formatted_size }}</span>
+          {% endif %}
+        </li>
+      {% endfor %}
+    {% else %}
+      <li class="empty-message">이 폴더에 파일이 없습니다.</li>
+    {% endif %}
+  </ul>
+</div>

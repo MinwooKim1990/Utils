@@ -1,0 +1,9 @@
+[2025-03-31 14:30:43,889] INFO in connection2: ===== 애플리케이션 시작 =====
+[2025-03-31 14:30:43,890] INFO in connection2: 허용된 드라이브: ['D:/', 'E:/']
+[2025-03-31 14:30:43,890] INFO in connection2: 로그 파일 경로: logs\flask_debug_20250331.log
+[2025-03-31 14:30:45,412] INFO in connection2: ===== 애플리케이션 시작 =====
+[2025-03-31 14:30:45,412] INFO in connection2: 허용된 드라이브: ['D:/', 'E:/']
+[2025-03-31 14:30:45,413] INFO in connection2: 로그 파일 경로: logs\flask_debug_20250331.log
+[2025-03-31 14:33:14,869] INFO in connection2: ===== 애플리케이션 시작 =====
+[2025-03-31 14:33:14,870] INFO in connection2: 허용된 드라이브: ['D:/', 'E:/']
+[2025-03-31 14:33:14,870] INFO in connection2: 로그 파일 경로: logs\flask_debug_20250331.log
