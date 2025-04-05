@@ -817,3 +817,209 @@ button:hover {
 }
 
 /* --- Preview + Chat Wrapper Styles --- END */
+
+/* Style for the processing message */
+.processing-message {
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    max-width: 85%;
+    word-wrap: break-word;
+    background-color: var(--hover);
+    color: var(--fg);
+    align-self: flex-start;
+    margin-right: auto;
+    font-style: italic;
+    opacity: 0.8;
+    margin-top: 10px; /* Add some spacing */
+    margin-bottom: 10px;
+}
+
+/* --- Mini Audio Player Styles --- START */
+#mini-audio-player {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    background-color: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 12px 15px;
+    z-index: 900; /* Below preview modals */
+    display: flex; /* Use flex to position close button */
+    align-items: flex-start; /* Align close button to top */
+    width: 350px; /* Increase width slightly for playlist */
+    transition: var(--transition);
+    opacity: 0.95;
+}
+
+#mini-audio-player:hover {
+    opacity: 1;
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.2);
+}
+
+.mini-player-content {
+    flex-grow: 1; /* Take available space */
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+#mini-player-title {
+    font-weight: 600;
+    font-size: 13px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--fg);
+}
+
+.mini-player-controls {
+    display: flex;
+    justify-content: center; /* Center buttons */
+    align-items: center;
+    gap: 10px;
+}
+
+.mini-player-controls button {
+    background: none;
+    border: none;
+    font-size: 18px; /* Adjust icon size */
+    cursor: pointer;
+    color: var(--link);
+    padding: 4px;
+    line-height: 1;
+}
+.mini-player-controls button:hover {
+    opacity: 0.8;
+    transform: none; /* Override default button hover */
+}
+
+.mini-player-progress-container {
+     width: 100%;
+}
+
+#mini-player-progress {
+    width: 100%;
+    height: 5px;
+    cursor: pointer;
+    accent-color: var(--link); /* Style the slider */
+    background: var(--border);
+    border-radius: 5px;
+    margin: 5px 0;
+}
+/* Style the thumb (handle) of the range input */
+#mini-player-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--link);
+  border-radius: 50%;
+  cursor: pointer;
+}
+#mini-player-progress::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--link);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+
+#mini-player-time {
+    font-size: 11px;
+    color: var(--fg);
+    opacity: 0.7;
+    text-align: center;
+}
+
+#mini-player-close {
+    background: none;
+    border: none;
+    font-size: 20px;
+    font-weight: bold;
+    color: var(--fg);
+    opacity: 0.6;
+    cursor: pointer;
+    padding: 0 5px;
+    line-height: 1;
+    margin-left: 10px; /* Space between content and close */
+}
+
+#mini-player-close:hover {
+    opacity: 1;
+    color: var(--danger);
+}
+
+/* Style for the volume slider */
+#mini-player-volume {
+    width: 70px; /* Adjust width as needed */
+    height: 5px;
+    cursor: pointer;
+    accent-color: var(--link);
+    background: var(--border);
+    border-radius: 5px;
+    margin-left: 5px; /* Add some space from buttons */
+}
+/* Style the thumb for volume slider */
+#mini-player-volume::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  background: var(--link);
+  border-radius: 50%;
+  cursor: pointer;
+}
+#mini-player-volume::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  background: var(--link);
+  border-radius: 50%;
+  cursor: pointer;
+  border: none;
+}
+
+.mini-player-controls button {
+    gap: 10px;
+}
+/* --- Mini Audio Player Styles --- END */
+
+/* --- Mini Player Playlist Styles --- START */
+#mini-player-playlist {
+    list-style: none;
+    padding: 0;
+    margin: 10px 0 0 0; /* Add margin top */
+    max-height: 100px; /* Limit playlist height */
+    overflow-y: auto; /* Add scroll if needed */
+    border-top: 1px solid var(--border); /* Separator line */
+    background-color: var(--bg); /* Slightly different background */
+    border-radius: 4px;
+}
+
+#mini-player-playlist li {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-bottom: 1px solid var(--border);
+    cursor: pointer; /* Allow clicking on list items */
+    transition: background-color 0.2s ease;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+#mini-player-playlist li:last-child {
+    border-bottom: none;
+}
+
+#mini-player-playlist li:hover {
+    background-color: var(--hover);
+}
+
+#mini-player-playlist li.playing {
+    font-weight: 600;
+    background-color: var(--highlight);
+    color: var(--card); /* Ensure text contrast on highlight bg */
+}
+/* --- Mini Player Playlist Styles --- END */

@@ -128,7 +128,15 @@
     <!-- Preview Modal Overlay -->
     <div id="preview-overlay" style="display: none;">
       <button id="preview-close-btn">&times;</button>
-      <div id="preview-content"></div>
+      <div id="preview-content">
+          <!-- Add video element here -->
+          <video id="preview-video" controls style="display: none; max-width: 100%; max-height: 80vh;"></video>
+          <!-- Existing preview elements might be here, ensure they are hidden when video shows -->
+          <img id="preview-image" style="display: none; max-width: 100%; max-height: 80vh;" />
+          <pre id="preview-text" style="display: none; white-space: pre-wrap; word-wrap: break-word;"></pre>
+          <div id="preview-pdf" style="display: none; width: 100%; height: 80vh;"></div>
+          <!-- Add other preview types if needed -->
+      </div>
       <div id="preview-filename"></div>
     </div>
 
@@ -186,6 +194,360 @@
       let mainMediaRecorder;
       let mainAudioChunks = [];
       let isMainRecording = false;
+
+      // --- Mini Audio Player Logic --- START
+      let miniPlayer = null;
+      let miniPlayerAudio = null; // HTMLAudioElement
+      let miniPlayerTitle = null;
+      let miniPlayerPlayPauseBtn = null;
+      let miniPlayerNextBtn = null;
+      let miniPlayerPrevBtn = null;
+      let miniPlayerCloseBtn = null;
+      let miniPlayerProgress = null;
+      let miniPlayerTime = null;
+      let miniPlayerVolume = null; // <<< Volume slider element
+
+      let audioPlaylist = []; // Array of {url: string, title: string}
+      let currentTrackIndex = -1;
+      let isMiniPlayerSeeking = false;
+
+      // Function to save player state to localStorage
+      function savePlayerState() {
+          if (!miniPlayerAudio || audioPlaylist.length === 0 || currentTrackIndex < 0) {
+               localStorage.removeItem('miniPlayerState'); // Clear if nothing is playing
+               return;
+           }
+          const state = {
+              playlist: audioPlaylist,
+              index: currentTrackIndex,
+              time: miniPlayerAudio.currentTime,
+              volume: miniPlayerAudio.volume,
+              paused: miniPlayerAudio.paused // Save paused state
+          };
+          try {
+              localStorage.setItem('miniPlayerState', JSON.stringify(state));
+          } catch (e) {
+              console.error("Error saving player state to localStorage:", e);
+          }
+      }
+
+      // Function to load player state from localStorage
+      function loadPlayerState() {
+          try {
+              const savedState = localStorage.getItem('miniPlayerState');
+              if (savedState) {
+                  const state = JSON.parse(savedState);
+                  // Basic validation
+                  if (state && Array.isArray(state.playlist) && typeof state.index === 'number' && state.index >= 0 && state.index < state.playlist.length) {
+                      audioPlaylist = state.playlist;
+                      currentTrackIndex = state.index;
+
+                      // Load the track but don't auto-play immediately from localStorage restore
+                      const track = audioPlaylist[currentTrackIndex];
+                       if(track && track.url) {
+                            miniPlayerAudio.src = track.url;
+                            miniPlayerTitle.textContent = track.title;
+                            // Restore time only if duration is available (might need small delay or check in loadedmetadata)
+                            miniPlayerAudio.addEventListener('loadedmetadata', () => {
+                                if (!isNaN(miniPlayerAudio.duration) && state.time < miniPlayerAudio.duration) {
+                                    miniPlayerAudio.currentTime = state.time;
+                                }
+                                miniPlayerProgress.max = miniPlayerAudio.duration || 100;
+                                miniPlayerProgress.value = miniPlayerAudio.currentTime;
+                                updatePlayerUI(); // Update UI after metadata loaded
+                                // Restore paused state
+                                if (state.paused) {
+                                    miniPlayerAudio.pause();
+            } else {
+                                    // Optional: Auto-play if it wasn't paused? Decide based on desired UX
+                                    // miniPlayerAudio.play().catch(e => console.error("Autoplay from restore failed:", e));
+                                }
+                                updatePlayerUI();
+                            }, { once: true }); // Ensure listener only runs once per load
+
+                            // Restore volume
+                            if (typeof state.volume === 'number' && state.volume >= 0 && state.volume <= 1) {
+                                miniPlayerAudio.volume = state.volume;
+                                if (miniPlayerVolume) miniPlayerVolume.value = state.volume;
+                            }
+
+                            showMiniPlayer();
+                            console.log("Restored player state from localStorage:", state);
+                } else {
+                           console.warn("Invalid track data in saved state.");
+                           localStorage.removeItem('miniPlayerState');
+                       }
+
+                  } else {
+                      console.log("Invalid saved player state found, clearing.");
+                      localStorage.removeItem('miniPlayerState');
+                  }
+              } else {
+                  console.log("No saved player state found.");
+              }
+          } catch (e) {
+              console.error("Error loading player state from localStorage:", e);
+              localStorage.removeItem('miniPlayerState'); // Clear corrupted state
+          }
+      }
+
+
+      function formatTime(seconds) {
+          const minutes = Math.floor(seconds / 60);
+          const secs = Math.floor(seconds % 60);
+          return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
+      }
+
+      // ... other functions (savePlayerState, loadPlayerState, formatTime) ...
+
+      function initMiniPlayer() {
+          miniPlayer = document.getElementById('mini-audio-player');
+          miniPlayerTitle = document.getElementById('mini-player-title');
+          miniPlayerPlayPauseBtn = document.getElementById('mini-player-playpause');
+          miniPlayerNextBtn = document.getElementById('mini-player-next');
+          miniPlayerPrevBtn = document.getElementById('mini-player-prev');
+          miniPlayerCloseBtn = document.getElementById('mini-player-close');
+          miniPlayerProgress = document.getElementById('mini-player-progress');
+          miniPlayerTime = document.getElementById('mini-player-time');
+          miniPlayerVolume = document.getElementById('mini-player-volume'); // <<< Get volume slider
+
+          if (!miniPlayer || !miniPlayerTitle || !miniPlayerPlayPauseBtn || !miniPlayerNextBtn || !miniPlayerCloseBtn || !miniPlayerProgress || !miniPlayerTime || !miniPlayerVolume) {
+              console.error("Mini Player elements not found!");
+              return;
+          }
+
+          miniPlayerAudio = new Audio();
+
+          // Define named event handlers
+          handleMiniPlayerLoadedMetadata = () => {
+              if (!isNaN(miniPlayerAudio.duration)) {
+                   miniPlayerProgress.max = miniPlayerAudio.duration;
+                   updatePlayerUI();
+              }
+          };
+          handleMiniPlayerTimeUpdate = () => {
+              if (!isMiniPlayerSeeking && !isNaN(miniPlayerAudio.duration)) {
+                  miniPlayerProgress.value = miniPlayerAudio.currentTime;
+                  updatePlayerUI();
+                  savePlayerState(); // Save state periodically on time update
+              }
+          };
+          handleMiniPlayerEnded = playNextTrack; // Use existing function name
+          handleMiniPlayerError = (e) => {
+              console.error("Mini Player Audio Error:", e);
+              miniPlayerTitle.textContent = "Error loading track";
+              // playNextTrack(); // Option: try next on error
+          };
+          handleMiniPlayerPlay = updatePlayerUI; // Use existing function name
+          handleMiniPlayerPause = updatePlayerUI; // Use existing function name
+
+          // Add Event Listeners using named handlers
+          miniPlayerAudio.addEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
+          miniPlayerAudio.addEventListener('timeupdate', handleMiniPlayerTimeUpdate);
+          miniPlayerAudio.addEventListener('ended', handleMiniPlayerEnded);
+          miniPlayerAudio.addEventListener('error', handleMiniPlayerError);
+          miniPlayerAudio.addEventListener('play', handleMiniPlayerPlay); // Update UI on play
+          miniPlayerAudio.addEventListener('pause', handleMiniPlayerPause); // Update UI on pause
+
+
+          // Event Listeners for Controls (these don't need removal in hideMiniPlayer)
+          miniPlayerPlayPauseBtn.addEventListener('click', () => {
+              if (miniPlayerAudio.paused) {
+                  miniPlayerAudio.play().catch(e => console.error("Play error:", e));
+              } else {
+                  miniPlayerAudio.pause();
+              }
+              // updatePlayerUI(); // Already handled by 'play'/'pause' events
+          });
+          miniPlayerNextBtn.addEventListener('click', playNextTrack);
+          miniPlayerPrevBtn.addEventListener('click', () => {
+              console.log("Previous track functionality: jump to beginning or previous track");
+              if (miniPlayerAudio.currentTime > 3 || currentTrackIndex === 0) { // If more than 3s in or first track, restart current
+                 miniPlayerAudio.currentTime = 0;
+              } else if (currentTrackIndex > 0) { // Go to previous track
+                  loadAndPlayTrack(currentTrackIndex - 1);
+              }
+          });
+          miniPlayerCloseBtn.addEventListener('click', hideMiniPlayer);
+
+          // Event Listeners for Progress Bar
+          miniPlayerProgress.addEventListener('input', () => {
+              isMiniPlayerSeeking = true;
+              if (!isNaN(miniPlayerAudio.duration)) {
+                 miniPlayerTime.textContent = `${formatTime(miniPlayerProgress.value)} / ${formatTime(miniPlayerAudio.duration)}`;
+              }
+          });
+          miniPlayerProgress.addEventListener('change', () => {
+              if (!isNaN(miniPlayerAudio.duration)) {
+                  miniPlayerAudio.currentTime = miniPlayerProgress.value;
+              }
+              isMiniPlayerSeeking = false;
+              if (!miniPlayerAudio.paused) {
+                 miniPlayerAudio.play().catch(e => console.error("Seek->Play error:", e));
+              }
+          });
+
+          // <<< Volume Control Listener >>>
+          miniPlayerVolume.addEventListener('input', () => {
+              miniPlayerAudio.volume = miniPlayerVolume.value;
+              savePlayerState(); // Save volume change
+          });
+
+          console.log("Mini Player Initialized.");
+          // Attempt to load state after initialization
+          loadPlayerState();
+      }
+
+      function showMiniPlayer() {
+          if (miniPlayer) miniPlayer.style.display = 'flex';
+      }
+
+      function hideMiniPlayer() {
+          if (miniPlayer) miniPlayer.style.display = 'none';
+          if (miniPlayerAudio) {
+              // <<< Remove event listeners first >>>
+              if (handleMiniPlayerLoadedMetadata) miniPlayerAudio.removeEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
+              if (handleMiniPlayerTimeUpdate) miniPlayerAudio.removeEventListener('timeupdate', handleMiniPlayerTimeUpdate);
+              if (handleMiniPlayerEnded) miniPlayerAudio.removeEventListener('ended', handleMiniPlayerEnded);
+              if (handleMiniPlayerError) miniPlayerAudio.removeEventListener('error', handleMiniPlayerError);
+              if (handleMiniPlayerPlay) miniPlayerAudio.removeEventListener('play', handleMiniPlayerPlay);
+              if (handleMiniPlayerPause) miniPlayerAudio.removeEventListener('pause', handleMiniPlayerPause);
+
+              miniPlayerAudio.pause(); // Pause
+              miniPlayerAudio.src = ''; // Clear src
+              try {
+                   miniPlayerAudio.load(); // Explicitly load empty source
+               } catch (e) {
+                   console.warn("Error calling load() during hideMiniPlayer:", e);
+               }
+          }
+          audioPlaylist = [];
+          currentTrackIndex = -1;
+          if (miniPlayerTitle) miniPlayerTitle.textContent = "Now Playing...";
+          if (miniPlayerProgress) miniPlayerProgress.value = 0;
+          if (miniPlayerTime) miniPlayerTime.textContent = "0:00 / 0:00";
+          if (miniPlayerPlayPauseBtn) miniPlayerPlayPauseBtn.textContent = '▶️';
+          localStorage.removeItem('miniPlayerState'); // Clear saved state on close
+          console.log("Mini Player Hidden and State Cleared.");
+      }
+
+      function addToPlaylistAndPlay(url, title) {
+           if (!miniPlayerAudio) {
+               console.error("Audio element not initialized.");
+               return;
+           }
+          const newTrack = { url, title };
+          let trackAlreadyExists = false;
+          // Check if the exact track already exists anywhere in the playlist
+          for(let i = 0; i < audioPlaylist.length; i++) {
+              if(audioPlaylist[i].url === url && audioPlaylist[i].title === title) {
+                  trackAlreadyExists = true;
+                  console.log(`Track "${title}" already in playlist at index ${i}.`);
+                  break;
+              }
+          }
+
+          // Only add if it doesn't exist
+          if (!trackAlreadyExists) {
+              audioPlaylist.push(newTrack);
+              console.log(`Added to playlist: ${title}. New length: ${audioPlaylist.length}`);
+          }
+
+          // <<< CHANGE: Play immediately ONLY if nothing is currently assigned/playing >>>
+          if (currentTrackIndex === -1 && audioPlaylist.length > 0) {
+              // If idle (no track assigned), play the *last added* track
+              const targetIndex = audioPlaylist.length - 1;
+              console.log(`Player is idle, playing newly added track at index ${targetIndex}: ${audioPlaylist[targetIndex].title}`);
+              loadAndPlayTrack(targetIndex);
+          } else if (currentTrackIndex >= 0) {
+              console.log(`Player has an active track (index ${currentTrackIndex}). Added "${title}" to queue.`);
+              // If player is active, just ensure UI reflects potential playlist changes
+              // updatePlaylistUI(); // Placeholder for future UI update
+          }
+
+          showMiniPlayer(); // Make sure player is visible regardless
+      }
+
+       function loadAndPlayTrack(index) {
+          if (index < 0 || index >= audioPlaylist.length || !miniPlayerAudio) {
+              console.log("Invalid track index or playlist empty.");
+              // Don't hide player here automatically, might just be an invalid index attempt
+              return;
+          }
+          currentTrackIndex = index;
+          const track = audioPlaylist[currentTrackIndex];
+          console.log(`Loading track ${index}: ${track.title}`);
+
+          // Pause current playback before changing src
+          miniPlayerAudio.pause();
+
+          miniPlayerAudio.src = track.url;
+          miniPlayerTitle.textContent = track.title;
+          miniPlayerProgress.value = 0;
+          miniPlayerAudio.load();
+          miniPlayerAudio.play()
+              .then(() => {
+                   updatePlayerUI();
+                   savePlayerState(); // Save state after starting new track
+              })
+              .catch(e => {
+                   console.error("Error playing track:", e);
+                   miniPlayerTitle.textContent = "Error playing";
+                   updatePlayerUI();
+                   savePlayerState(); // Save state even if error occurred
+               });
+           showMiniPlayer(); // Ensure player is visible when loading a track
+      }
+
+      function playNextTrack() {
+           // Play the next index in the current playlist array
+           const nextIndex = currentTrackIndex + 1;
+           if (nextIndex < audioPlaylist.length) {
+              loadAndPlayTrack(nextIndex);
+           } else {
+              console.log("End of playlist reached.");
+              // Optionally loop back to the start?
+              // loadAndPlayTrack(0);
+              // Or just stop and hide:
+              hideMiniPlayer();
+           }
+      }
+
+      function updatePlayerUI() {
+          if (!miniPlayerAudio || !miniPlayerPlayPauseBtn || !miniPlayerTime || !miniPlayerProgress || !miniPlayerTitle) return;
+
+          miniPlayerPlayPauseBtn.textContent = miniPlayerAudio.paused ? '▶️' : '⏸️';
+
+          const currentTime = miniPlayerAudio.currentTime || 0;
+          const duration = miniPlayerAudio.duration || 0;
+          if (!isNaN(duration) && duration > 0) { // Check duration > 0
+              miniPlayerTime.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
+              if (miniPlayerProgress.max != duration) {
+                   miniPlayerProgress.max = duration;
+              }
+              // Update progress only if not seeking
+              if (!isMiniPlayerSeeking) {
+                   miniPlayerProgress.value = currentTime;
+              }
+          } else {
+              miniPlayerTime.textContent = `${formatTime(currentTime)} / --:--`;
+              miniPlayerProgress.max = 100; // Default max if duration unknown
+               if (!isMiniPlayerSeeking) {
+                   miniPlayerProgress.value = 0; // Reset if duration unknown
+               }
+          }
+
+          // Update Title based on currentTrackIndex
+          if (currentTrackIndex !== -1 && currentTrackIndex < audioPlaylist.length) {
+               if (!miniPlayerTitle.textContent.startsWith("Error")) { // Avoid overwriting error messages
+                  miniPlayerTitle.textContent = audioPlaylist[currentTrackIndex].title;
+              }
+          } else if (audioPlaylist.length === 0) {
+               miniPlayerTitle.textContent = "Now Playing...";
+           }
+           // Volume is handled by its own event listener + state loading
+      }
+      // --- Mini Audio Player Logic --- END
 
       // --- Utility Functions ---
       function formatFileSize(bytes) { if (bytes === 0) return '0 Bytes'; const k = 1024; const i = Math.floor(Math.log(bytes) / Math.log(k)); return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + ['Bytes', 'KB', 'MB', 'GB', 'TB'][i]; }
@@ -253,7 +615,7 @@
               if(xhr.status>=200&&xhr.status<300){
                   if(pBar) pBar.style.width='100%'; pItem.style.backgroundColor='#10b981';
                   setTimeout(()=>{pItem.remove(); if(pCont&&pCont.children.length===0) loadFileList("{{ current_path }}");}, 1000); // Reload on success
-              } else {
+        } else {
                   pItem.style.backgroundColor='#ef4444'; pItem.innerHTML+=`<div style="color:var(--danger);margin-top:8px;">Fail: ${xhr.statusText||'Err'}</div>`;
                   setTimeout(()=>pItem.remove(), 3000);
               }
@@ -383,6 +745,23 @@
                   fetchOpts.body = payload;
                   fetchOpts.headers = { 'Content-Type': 'application/json' };
 
+              } else if (isFileChat && instanceType === 'video') {
+                  // <<< FILE CHAT (VIDEO): Send JSON payload, potentially flag for first message >>>
+                  console.log(`File chat (Video - ${instanceId}): Sending JSON payload.`);
+                  const isFirstVideoMessage = historyArray.length <= 1; // Check history length AFTER adding user message
+
+                  payload = JSON.stringify({
+                      message: msg || '', // Send user message
+                      model: model,
+                      history: historyArray.slice(0, -1), // Send history *before* current user msg
+                      instanceId: instanceId,
+                      processFirstVideoPart: isFirstVideoMessage // <<< Flag for backend
+                  });
+                  fetchOpts.body = payload;
+                  fetchOpts.headers = { 'Content-Type': 'application/json' };
+                  if (isFirstVideoMessage) {
+                      console.log("Flagging this as the first video message for backend processing.");
+                  }
               } else {
                   // MAIN CHAT: Send JSON or FormData based on attached image
                   const mainImageData = currentImgRef?.attachedImageData;
@@ -464,7 +843,14 @@
 
       // --- New Preview+Chat Instance Logic --- START
       function createPreviewChatInstance(instanceId, fileName, relPath, type) {
-          console.log(`Creating instance ${instanceId} for ${fileName}`);
+          console.log(`Creating instance ${instanceId} for ${fileName} (type: ${type})`); // Log type
+
+          // <<< NEW: Close mini player if opening a video preview >>>
+          if (type === 'video') {
+              console.log("Video instance detected, attempting to hide mini player.");
+              hideMiniPlayer();
+          }
+
           const instanceDiv = document.createElement('div'); instanceDiv.id = instanceId; instanceDiv.className = 'preview-chat-instance';
           const header = document.createElement('div'); header.className = 'preview-chat-header';
           const title = document.createElement('span'); title.className = 'preview-chat-filename'; title.textContent = fileName; title.title = relPath;
@@ -487,24 +873,99 @@
               { mainId:'chat-input-area', cloneId:'inputArea', elementType:'div', handleSubElements:true }
           ];
 
-          cloneConfig.forEach(cfg => { let cloned=null; let mainE=cfg.mainId?document.getElementById(cfg.mainId):null; let mainP=cfg.mainParentSelector?mainChatContainer?.querySelector(cfg.mainParentSelector):null; if(cfg.createNew){ cloned=document.createElement(cfg.createNew); cloned.id=`${instanceId}-${cfg.cloneId}`; if(cfg.newClass)cloned.className=cfg.newClass; clonedElements[cfg.cloneId]=cloned; if(cfg.initialContent&&cfg.cloneId==='messages')addMessageToChat("파일 질문:",'assistant',{messages:cloned}); } else if(mainP){ cloned=mainP.cloneNode(true); const elIn=cloned.querySelector(cfg.elementSelector); if(elIn){ elIn.id=`${instanceId}-${cfg.mainId||cfg.cloneId}`; clonedElements[cfg.cloneId]=elIn; } else console.warn(`Elem ${cfg.elementSelector} not in ${cfg.mainParentSelector}`); } else if(mainE){ cloned=mainE.cloneNode(true); cloned.id=`${instanceId}-${cfg.mainId}`; clonedElements[cfg.cloneId]=cloned; if(cfg.newClass)cloned.className=cfg.newClass; if(cfg.handleSubElements){ if(cfg.cloneId==='imagePreviewArea'){ cloned.style.display='none'; const img=cloned.querySelector('#image-preview'); if(img){img.id=`${instanceId}-image-preview`;clonedElements.imagePreview=img;} const span=cloned.querySelector('#image-filename'); if(span){span.id=`${instanceId}-image-filename`;clonedElements.imageFilename=span;} const btn=cloned.querySelector('#remove-image-button'); if(btn){btn.id=`${instanceId}-remove-image-button`;btn.onclick=()=>clearAttachedImage(instanceId);clonedElements.removeImageButton=btn;} } else if(cfg.cloneId==='inputArea'){ const fileInput=document.createElement('input'); fileInput.type='file';fileInput.id=`${instanceId}-image-upload`;fileInput.accept='image/*';fileInput.style.display='none'; fileInput.onchange=(e)=>handleFileImageSelect(e,instanceId); clonedElements.imageUploadInput=fileInput; cloned.insertBefore(fileInput,cloned.firstChild); const imgBtn=cloned.querySelector('#image-upload-button'); if(imgBtn){imgBtn.id=`${instanceId}-image-upload-button`;imgBtn.onclick=()=>fileInput.click();clonedElements.imageUploadButton=imgBtn;} const micBtn=cloned.querySelector('#mic-button'); if(micBtn){micBtn.id=`${instanceId}-mic-button`;micBtn.disabled=true;micBtn.title="Audio(File Disabled)";clonedElements.micButton=micBtn;} const inputEl=cloned.querySelector('#chat-input'); if(inputEl){inputEl.id=`${instanceId}-chat-input`;inputEl.onkeypress=(e)=>{if(e.key==='Enter'&&!e.shiftKey){sendMessage(instanceId);e.preventDefault();}};clonedElements.input=inputEl;} const sendBtn=cloned.querySelector('#send-button'); if(sendBtn){sendBtn.id=`${instanceId}-send-button`;sendBtn.onclick=()=>sendMessage(instanceId);clonedElements.sendButton=sendBtn;} } } } else console.warn("Clone failed:",cfg); if(cloned)chatArea.appendChild(cloned); });
-
-          if(chatArea.children.length===0){console.warn(`Chat area ${instanceId} empty.`);chatArea.innerHTML='<p style="padding:15px;text-align:center;">Chat UI load failed.</p>';}
-
-          // <<< Remove Mic Button from cloned input area >>>
-          const clonedInputArea = chatArea.querySelector(`#${instanceId}-inputArea`);
-          const clonedMicButton = clonedInputArea?.querySelector(`#${instanceId}-mic-button`);
-          if (clonedInputArea && clonedMicButton) {
-              clonedInputArea.removeChild(clonedMicButton);
-              if (clonedElements.micButton) delete clonedElements.micButton; // Remove reference
-              if (clonedElements.micStatus) {
-                    const clonedMicStatus = chatArea.querySelector(`#${instanceId}-mic-status`);
-                    if(clonedMicStatus) chatArea.removeChild(clonedMicStatus);
-                    delete clonedElements.micStatus; // Remove reference
-              }
-              console.log(`Removed mic button and status for instance ${instanceId}`);
-          }
-
+          cloneConfig.forEach(cfg => { 
+              let cloned = null; 
+              let mainE = cfg.mainId ? document.getElementById(cfg.mainId) : null; 
+              let mainP = cfg.mainParentSelector ? mainChatContainer?.querySelector(cfg.mainParentSelector) : null; 
+              
+              if(cfg.createNew){ 
+                  cloned = document.createElement(cfg.createNew); 
+                  cloned.id = `${instanceId}-${cfg.cloneId}`; 
+                  if(cfg.newClass) cloned.className = cfg.newClass; 
+                  clonedElements[cfg.cloneId] = cloned; 
+                  if(cfg.initialContent && cfg.cloneId === 'messages')
+                      addMessageToChat("파일 질문:", 'assistant', {messages: cloned}); 
+              } else if(mainP){ 
+                  cloned = mainP.cloneNode(true); 
+                  const elIn = cloned.querySelector(cfg.elementSelector); 
+                  if(elIn){ 
+                      elIn.id = `${instanceId}-${cfg.mainId || cfg.cloneId}`; 
+                      clonedElements[cfg.cloneId] = elIn; 
+                  } else console.warn(`Elem ${cfg.elementSelector} not in ${cfg.mainParentSelector}`); 
+              } else if(mainE){ 
+                  cloned = mainE.cloneNode(true); 
+                  cloned.id = `${instanceId}-${cfg.mainId}`; 
+                  clonedElements[cfg.cloneId] = cloned; 
+                  if(cfg.newClass) cloned.className = cfg.newClass; 
+                  if(cfg.handleSubElements){ 
+                      if(cfg.cloneId === 'imagePreviewArea'){ 
+                          cloned.style.display = 'none'; 
+                          const img = cloned.querySelector('#image-preview'); 
+                          if(img){
+                              img.id = `${instanceId}-image-preview`;
+                              clonedElements.imagePreview = img;
+                          } 
+                          const span = cloned.querySelector('#image-filename'); 
+                          if(span){
+                              span.id = `${instanceId}-image-filename`;
+                              clonedElements.imageFilename = span;
+                          } 
+                          const btn = cloned.querySelector('#remove-image-button'); 
+                          if(btn){
+                              btn.id = `${instanceId}-remove-image-button`;
+                              btn.onclick = () => clearAttachedImage(instanceId);
+                              clonedElements.removeImageButton = btn;
+                          } 
+                      } else if(cfg.cloneId === 'inputArea'){ 
+                          const fileInput = document.createElement('input'); 
+                          fileInput.type = 'file';
+                          fileInput.id = `${instanceId}-image-upload`;
+                          fileInput.accept = 'image/*';
+                          fileInput.style.display = 'none'; 
+                          fileInput.onchange = (e) => handleFileImageSelect(e, instanceId); 
+                          clonedElements.imageUploadInput = fileInput; 
+                          cloned.insertBefore(fileInput, cloned.firstChild); 
+                          
+                          const imgBtn = cloned.querySelector('#image-upload-button'); 
+                          if(imgBtn){
+                              imgBtn.id = `${instanceId}-image-upload-button`;
+                              imgBtn.onclick = () => fileInput.click();
+                              clonedElements.imageUploadButton = imgBtn;
+                          } 
+                          
+                          const micBtn = cloned.querySelector('#mic-button'); 
+                          if(micBtn){
+                              micBtn.id = `${instanceId}-mic-button`;
+                              micBtn.disabled = true;
+                              micBtn.title = "Audio(File Disabled)";
+                              clonedElements.micButton = micBtn;
+                          } 
+                          
+                          const inputEl = cloned.querySelector('#chat-input'); 
+                          if(inputEl){
+                              inputEl.id = `${instanceId}-chat-input`;
+                              inputEl.onkeypress = (e) => {
+                                  if(e.key === 'Enter' && !e.shiftKey){
+                                      sendMessage(instanceId);
+                                      e.preventDefault();
+                                  }
+                              };
+                              clonedElements.input = inputEl;
+                          } 
+                          
+                          const sendBtn = cloned.querySelector('#send-button'); 
+                          if(sendBtn){
+                              sendBtn.id = `${instanceId}-send-button`;
+                              sendBtn.onclick = () => sendMessage(instanceId);
+                              clonedElements.sendButton = sendBtn;
+                          } 
+                      } 
+                  } 
+              } else console.warn("Clone failed:", cfg); 
+              
+              if(cloned) chatArea.appendChild(cloned); 
+          });
+          
           contentDiv.appendChild(previewArea);
           contentDiv.appendChild(chatArea);
 
@@ -512,11 +973,26 @@
           instanceDiv.appendChild(contentDiv);
           document.body.appendChild(instanceDiv);
 
+          // <<< Find messages div AFTER appending to body >>>
+          const messagesDiv = document.getElementById(`${instanceId}-messages`);
+          if (!messagesDiv) {
+               console.error(`CRITICAL: Could not find messages div #${instanceId}-messages after creation!`);
+          }
+          clonedElements.messages = messagesDiv; // Ensure messages reference is correct
+
           fileChatInstances[instanceId] = { fileName: fileName, relPath: relPath, elements: clonedElements, history: [], attachedImageData: null, type: type };
-          if(clonedElements.messages?.children.length>0){ const initMsg=clonedElements.messages.children[0]?.textContent; if(initMsg)fileChatInstances[instanceId].history.push({role:'assistant',parts:[{text:initMsg}]}); }
+          // Re-add initial message using the found messagesDiv
+          if (clonedElements.messages) {
+              addMessageToChat("파일 질문:", 'assistant', { messages: clonedElements.messages });
+              const initMsg = clonedElements.messages.lastElementChild?.textContent;
+              if(initMsg) fileChatInstances[instanceId].history.push({ role: 'assistant', parts: [{ text: initMsg }] });
+          }
 
           console.log(`Created instance: ${instanceId}`, fileChatInstances[instanceId]);
           loadPreviewContent(instanceId, relPath, fileName);
+
+          // Return the cloned elements for direct use
+          return clonedElements;
       }
 
       function closePreviewChatInstance(instanceId) {
@@ -533,11 +1009,12 @@
               // Remove the instance Div from the DOM
               const iD=document.getElementById(instanceId); if(iD)iD.remove(); else console.warn(`Instance div ${instanceId} not found`);
 
-              // <<< If it was a document instance, clear the backend cache >>>
-              if (instanceType === 'document') {
-                  console.log(`Clearing backend cache for document instance: ${instanceId}`);
+              // <<< If it was a document OR video instance, clear the backend cache >>>
+              // Using the unified endpoint
+              if (instanceType === 'document' || instanceType === 'video') {
+                  console.log(`Clearing backend cache for ${instanceType} instance: ${instanceId}`);
                   const apiKey = "{{ api_key|urlencode }}";
-                  fetch('/clear_document_cache', {
+                  fetch('/clear_instance_cache', {
                       method: 'POST',
                       headers: {
                           'Content-Type': 'application/json',
@@ -554,7 +1031,7 @@
                       }
                   })
                   .catch(error => {
-                      console.error(`Error calling /clear_document_cache for ${instanceId}:`, error);
+                      console.error(`Error calling /clear_instance_cache for ${instanceId}:`, error);
                   });
               }
 
@@ -594,7 +1071,7 @@
 
               if(el){ previewArea.innerHTML=''; previewArea.appendChild(el); }
               else { previewArea.innerHTML='<span class="preview-placeholder">Preview generation failed.</span>'; console.warn(`Preview element generation failed for type ${pType}, URL: ${pUrl}`); }
-          } else {
+               } else {
               previewArea.innerHTML='<span class="preview-placeholder">Preview not supported for this file type.</span>';
               console.log(`Preview not supported for extension: ${ext}`);
           }
@@ -641,10 +1118,14 @@
               const fileName = fileEntry.querySelector('.file-name')?.textContent || relPath.split('/').pop();
               const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
 
+              console.log(`[DBLClick] Detected for file: ${fileName}, Ext: ${fileExt}, Path: ${relPath}`); // <<< DEBUG LOG
+
               // Define File Type Categories
               const llmImageExts=['png','jpg','jpeg','webp','heic','heif'];
               const llmDocExts=['pdf','txt','md','py','js','html','css','json', 'csv', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'log', 'sh', 'bat', 'ps1']; // <<< EXPANDED RAG types
               const llmVideoExts=['mp4','mpeg','mov','avi','flv','mpg','webm','wmv','3gpp'];
+
+              console.log(`[DBLClick] Checking extension against categories...`); // <<< DEBUG LOG
 
               const previewOnlyImageExts=['gif','bmp','svg','ico'];
               const previewOnlyAudioExts=['mp3','wav','ogg','aac','flac'];
@@ -655,38 +1136,44 @@
               // Determine Action based on file type
               if (llmImageExts.includes(fileExt) || llmVideoExts.includes(fileExt)) {
                   // ACTION: Open Preview + Chat UI for Image/Video
-                  console.log(`Opening Preview+Chat for LLM Image/Video: ${fileName}`);
+                  console.log(`[DBLClick] Action: Opening Preview+Chat for LLM ${llmImageExts.includes(fileExt) ? 'Image' : 'Video'}`); // <<< DEBUG LOG
+                  console.log(`Opening Preview+Chat for LLM ${llmImageExts.includes(fileExt) ? 'Image' : 'Video'}: ${fileName}`);
                   const instanceId = `file-chat-${instanceCounter++}`;
-                  createPreviewChatInstance(instanceId, fileName, relPath, 'media'); // <<< Added type hint
+                  const instanceType = llmImageExts.includes(fileExt) ? 'media' : 'video';
+                  const instanceElements = createPreviewChatInstance(instanceId, fileName, relPath, instanceType); // <<< Pass 'video' type & get elements
 
+                  // <<< Initiate video processing if it's a video file >>>
+                  if (instanceType === 'video') {
+                      console.log(`[DBLClick] Action: Calling initiateVideoProcessing for ${instanceId}`); // <<< DEBUG LOG
+                      // Pass the specific chatMessagesDiv element
+                      initiateVideoProcessing(instanceId, relPath, fileName, instanceElements.messages);
+                  }
               } else if (llmDocExts.includes(fileExt)) {
                   // <<< ACTION: Open Preview + Chat UI for Document (Initiate RAG Processing) >>>
+                  console.log(`[DBLClick] Action: Opening Preview+Chat for LLM Document`); // <<< DEBUG LOG
                   console.log(`Initiating RAG processing for document: ${fileName}`);
                   const instanceId = `file-chat-${instanceCounter++}`;
                   createPreviewChatInstance(instanceId, fileName, relPath, 'document'); // <<< Added type hint
+                  console.log(`[DBLClick] Action: Calling initiateDocumentProcessing for ${instanceId}`); // <<< DEBUG LOG
                   initiateDocumentProcessing(instanceId, relPath, fileName);
 
-              } else if (previewOnlyImageExts.includes(fileExt) || previewOnlyAudioExts.includes(fileExt)) {
-                   // ACTION: Open Standard Modal Preview for non-LLM types
-                  console.log(`Opening standard modal for preview-only/basic file: ${fileName}`);
+              } else if (previewOnlyImageExts.includes(fileExt)) { // <<< MODIFIED: Separate image and audio handling >>>
+                   // ACTION: Open Standard Modal Preview for non-LLM IMAGE types
+                  console.log(`[DBLClick] Action: Opening standard modal preview for Image`); // <<< DEBUG LOG
                   const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
-                  let previewUrl = null; let previewType = null;
+                  const previewUrl = `/preview_image/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
+                  showPreviewModal('image', previewUrl, fileName);
 
-                  if (allKnownImageExts.includes(fileExt)) { // Use combined list for modal check
-                      previewType = 'image'; previewUrl = `/preview_image/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-                  } else if (previewOnlyAudioExts.includes(fileExt)) {
-                      previewType = 'audio'; previewUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`; // Use stream endpoint for audio
-                  }
-                  // Text/PDF preview logic removed from here as they are handled by RAG now
+              } else if (previewOnlyAudioExts.includes(fileExt)) { // <<< NEW: Handle Audio Files >>>
+                  // ACTION: Add to Mini Player Playlist
+                  console.log(`[DBLClick] Action: Adding to Mini Player playlist`);
+                  const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
+                  const streamUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
+                  addToPlaylistAndPlay(streamUrl, fileName); // Call the new function
 
-                  if (previewUrl && previewType) {
-                      showPreviewModal(previewType, previewUrl, fileName); // Calls global function
-                  } else {
-                      console.warn(`Could not determine PREVIEW URL for ${fileName} (ext: ${fileExt})`);
-                      alert('미리보기를 열 수 없습니다.');
-                  }
               } else {
                   // ACTION: Unsupported Type
+                  console.log(`[DBLClick] Action: Unsupported file type`); // <<< DEBUG LOG
                   console.log(`Unsupported file type ${fileExt}`);
                   alert('지원하지 않는 파일 형식입니다.');
               }
@@ -710,6 +1197,9 @@
           // Initialize Main Chat UI
           if (mainChatMessages) { addMessageToChat("안녕하세요! 무엇을 도와드릴까요?", 'assistant', { messages: mainChatMessages }, null, mainChatHistory); }
           else { console.warn("Main chat messages container not found on init."); }
+
+          // Initialize Mini Player
+          initMiniPlayer(); // <<< ADD THIS CALL
 
           // Setup Search Listener
           const searchInput = document.getElementById('searchInput');
@@ -757,12 +1247,11 @@
 
       }); // ====== End DOMContentLoaded ======
 
-      // --- >>> NEW Function to initiate document processing <<< ---
+      // --- >>> NEW Function to initiate document processing (Reverted) <<< ---
       async function initiateDocumentProcessing(instanceId, relPath, fileName) {
           const instance = fileChatInstances[instanceId];
           if (!instance || !instance.elements?.messages || !instance.elements.input || !instance.elements.sendButton) {
               console.error(`initDocProc: Instance ${instanceId} or critical elements missing.`);
-              // Optionally display an error in the instance's chat
               if (instance?.elements?.messages) {
                   addMessageToChat("오류: 문서 처리 UI 초기화 실패.", 'assistant', instance.elements);
               }
@@ -770,15 +1259,19 @@
           }
 
           const chatElements = instance.elements;
-          const processingMessage = "문서 분석 및 벡터화 작업 중... 잠시 기다려주세요. 완료 후 메시지가 표시됩니다.";
+          const processingMessageText = "문서 분석 및 벡터화 작업 중..."; // <<< 수정: 간단한 텍스트 사용
 
           // Display processing message and disable input
-          addMessageToChat(processingMessage, 'assistant', chatElements, null, instance.history);
+          addMessageToChat(processingMessageText, 'assistant', chatElements, null, null); // <<< 수정: 히스토리에 추가 안 함, 클래스 제거
+          const processingMsgElement = chatElements.messages.lastElementChild; // 참조 유지
+          if (processingMsgElement) { // 스타일 직접 적용
+               processingMsgElement.style.fontStyle = 'italic';
+               processingMsgElement.style.opacity = '0.8';
+          }
+
           chatElements.input.disabled = true;
           chatElements.sendButton.disabled = true;
-          // Optionally hide preview area during processing?
-          // if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">Processing...</span>';
-          if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 내용 분석 중...</span>'; // Keep preview area visible with message
+          if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 내용 분석 중...</span>';
 
           try {
               const apiKey = "{{ api_key|urlencode }}";
@@ -786,39 +1279,137 @@
                   method: 'POST',
                   headers: {
                       'Content-Type': 'application/json',
-                      'X-Api-Key': apiKey // Send API key in header
+                      'X-Api-Key': apiKey
                   },
-                  body: JSON.stringify({ instanceId, relPath, fileName })
+                  body: JSON.stringify({
+                instanceId: instanceId,
+                relPath: relPath,
+                fileName: fileName,
+                drive: "{{ drive }}" // <<< 이 부분을 추가해주세요
+            })
               });
 
-              const result = await response.json();
+              // <<< 처리중 메시지 제거 >>>
+              if (processingMsgElement && chatElements.messages.contains(processingMsgElement)) {
+                   processingMsgElement.remove();
+              }
 
               if (response.ok) {
+                  const result = await response.json();
                   console.log(`Document processing succeeded for ${instanceId}:`, result.message);
                   addMessageToChat(`✅ ${result.message || '문서 처리 완료.'} 이제 문서에 대해 질문할 수 있습니다.`, 'assistant', chatElements, null, instance.history);
-                   // Clear the preview placeholder after successful processing
                    if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 분석 완료.</span>';
-                   // <<< ADDED: Load the actual preview after processing is complete >>>
                    loadPreviewContent(instanceId, relPath, fileName);
-              } else {
-                  console.error(`Document processing failed for ${instanceId}:`, result.error);
-                  addMessageToChat(`❌ 문서 처리 실패: ${result.error || '알 수 없는 오류'}. 채팅 기능이 제한될 수 있습니다.`, 'assistant', chatElements, null, instance.history);
+              } else { // <<< 수정: 503 처리 제거, 일반 오류 처리 >>>
+                  const result = await response.json().catch(() => ({ error: `서버 오류 (상태: ${response.status})` }));
+                  console.error(`Document processing failed for ${instanceId}:`, result.error || response.statusText);
+                  addMessageToChat(`❌ 문서 처리 실패: ${result.error || response.statusText}. 채팅 기능이 제한될 수 있습니다.`, 'assistant', chatElements, null, instance.history);
                    if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 분석 실패.</span>';
               }
 
-          } catch (error) {
+          } catch (error) { // <<< 수정: 처리중 메시지 제거 추가 >>>
+              if (processingMsgElement && chatElements.messages.contains(processingMsgElement)) {
+                   processingMsgElement.remove();
+              }
               console.error(`Error calling /process_document for ${instanceId}:`, error);
               addMessageToChat(`❌ 문서 처리 요청 중 오류 발생: ${error.message}.`, 'assistant', chatElements, null, instance.history);
               if (chatElements.previewArea) chatElements.previewArea.innerHTML = '<span class="preview-placeholder">문서 분석 중 오류 발생.</span>';
           } finally {
-              // Re-enable input regardless of success or failure
-              // Users might still want to ask general questions even if RAG fails
+              // <<< 수정: finally 블록에서 입력 활성화 >>>
               chatElements.input.disabled = false;
               chatElements.sendButton.disabled = false;
               console.log(`Input re-enabled for instance ${instanceId} after document processing attempt.`);
           }
       }
 
+      // --- >>> NEW Functions for Video Processing <<< ---
+      async function initiateVideoProcessing(instanceId, relPath, fileName, chatMessagesDiv) { // <<< Receive chatMessagesDiv as argument
+          // Display processing message
+          const processingMessage = document.createElement('div');
+          processingMessage.className = 'processing-message'; // Assign a class for potential styling
+          processingMessage.textContent = '비디오 처리 요청 중...'; // Add text content
+          chatMessagesDiv.appendChild(processingMessage);
+
+          // Ensure chat elements are available for adding messages later
+          const instance = fileChatInstances[instanceId];
+          const chatElements = instance ? instance.elements : { messages: chatMessagesDiv }; // Fallback if instance lookup fails unexpectedly
+
+          if (!chatElements.messages) {
+             console.error("initiateVideoProcessing: chatMessagesDiv is not valid or instance elements missing.");
+             // Try removing the processing message if it was added
+             if (processingMessage.parentNode === chatMessagesDiv) {
+                 chatMessagesDiv.removeChild(processingMessage);
+             }
+             return; // Cannot proceed without a valid message container
+          }
+
+
+          try {
+              const response = await fetch('/process_video', {
+                  method: 'POST',
+                  headers: {
+                      'Content-Type': 'application/json',
+                      'X-Api-Key': "{{ api_key|urlencode }}"
+                  },
+                  // <<< ADD drive parameter >>>
+                  body: JSON.stringify({ instanceId, relPath, fileName, drive: "{{ drive }}" })
+              });
+
+              // Remove processing message *before* adding the result/error message
+              if (processingMessage.parentNode === chatMessagesDiv) {
+                  chatMessagesDiv.removeChild(processingMessage);
+              }
+
+              if (response.ok) {
+                  const result = await response.json();
+                  console.log("Video processing initiated/completed:", result);
+                  // <<< Use addMessageToChat instead of appendMessage >>>
+                  addMessageToChat(result.message || "비디오 처리가 완료되었습니다. 이제 질문할 수 있습니다.", 'assistant', chatElements, null, instance?.history);
+              } else {
+                  const errorResult = await response.json().catch(() => ({ error: `영상 처리 중 서버 오류 (Status: ${response.status})` }));
+                  const errorText = errorResult.error || `영상 처리 중 오류 발생 (Status: ${response.status})`;
+                  console.error("Video processing error response:", errorResult);
+                  // <<< Use addMessageToChat instead of appendMessage >>>
+                  addMessageToChat(`❌ 오류: ${errorText}`, 'assistant', chatElements, null, instance?.history);
+              }
+          } catch (error) {
+               // Remove processing message *before* adding the error message
+              if (processingMessage.parentNode === chatMessagesDiv) {
+                  chatMessagesDiv.removeChild(processingMessage);
+              }
+              console.error("Error calling /process_video:", error);
+              // <<< Use addMessageToChat instead of appendMessage >>>
+              addMessageToChat(`❌ 클라이언트 측 오류: ${error.message}`, 'assistant', chatElements, null, instance?.history);
+          } finally {
+              // Re-enable input regardless of outcome (ensure elements exist)
+              // Note: Input/Send buttons are part of chatElements if instance exists
+              if (chatElements.input) chatElements.input.disabled = false;
+              if (chatElements.sendButton) chatElements.sendButton.disabled = false;
+          }
+      }
+
     </script>
+
+    <!-- Mini Audio Player -->
+    <div id="mini-audio-player" style="display: none;">
+        <div class="mini-player-content">
+            <span id="mini-player-title">Now Playing...</span>
+            <div class="mini-player-controls">
+                <button id="mini-player-prev" title="Previous (Not Implemented)">⏮️</button>
+                <button id="mini-player-playpause" title="Play/Pause">▶️</button>
+                <button id="mini-player-next" title="Next">⏭️</button>
+                <!-- Volume Control -->
+                <input type="range" id="mini-player-volume" title="Volume" min="0" max="1" step="0.05" value="1">
+            </div>
+            <div class="mini-player-progress-container">
+                 <input type="range" id="mini-player-progress" value="0" min="0" max="100">
+            </div>
+             <span id="mini-player-time">0:00 / 0:00</span>
+             <!-- Playlist Display Area -->
+             <ul id="mini-player-playlist"></ul>
+        </div>
+        <button id="mini-player-close" title="Close Player">&times;</button>
+    </div>
+
 </body>
 </html>

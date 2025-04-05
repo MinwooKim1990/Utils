@@ -15,12 +15,15 @@ from PIL import Image
 import io
 import google.api_core.exceptions as exceptions
 from google.generativeai.types import BlockedPromptException
-# Correct imports based on API expectations and common usage
-# from google.generativeai.types import Tool, GenerateContentConfig, GoogleSearch
+import subprocess
+import tempfile
+import glob
+import time # <<< Add time import for polling
+import threading
 
 # <<< RAG Imports >>>
-import fitz # PyMuPDF
-from sentence_transformers import SentenceTransformer
+import fitz # PyMuPDF # type: ignore
+from sentence_transformers import SentenceTransformer # type: ignore
 import numpy as np
 
 # Load environment variables from .env file
@@ -48,23 +51,29 @@ REQUIRED_BROWSER = 'true'
 
 tree_cache = {}
 
-# <<< RAG Initialization >>>
-# Load Sentence Transformer model (adjust model name if needed)
-# Using a multilingual model suitable for Korean and English
+# <<< RAG Initialization: 이전 방식으로 복원 (스크립트 시작 시 로드) >>>
+embedding_model = None
+embedding_model_load_error_msg = None # 오류 메시지 저장은 유용할 수 있어 유지
 try:
-    print("Loading Sentence Transformer model...")
-    # Consider smaller/faster models if resource usage is a concern
-    # e.g., 'distiluse-base-multilingual-cased-v1' or specific Ko models
+    print("Loading Sentence Transformer model (reverting to initial load)...")
+    # 모델 이름은 이전과 동일하게 사용
     embedding_model = SentenceTransformer('paraphrase-multilingual-mpnet-base-v2')
     print("Sentence Transformer model loaded successfully.")
 except Exception as e:
+    embedding_model = None # 실패 시 None으로 설정
+    embedding_model_load_error_msg = str(e)
     print(f"FATAL: Failed to load Sentence Transformer model: {e}")
-    # Optionally exit or disable RAG features if model loading fails
-    embedding_model = None
+    # 여기서 앱 실행을 중단할 수도 있음 (선택 사항)
+    # raise RuntimeError(f"Failed to load embedding model: {e}")
 
 # In-memory store for document chunks and embeddings
 # Structure: { instanceId: { 'chunks': [chunk1, chunk2, ...], 'embeddings': [emb1, emb2, ...] } }
 document_vector_stores = {}
+
+# <<< Changed video state store >>>
+# Structure: { instanceId: { 'rel_path': str, 'file_uri': str, 'file_name_google': str } }
+video_processing_state = {}
+# <<< End Changed video state store >>>
 
 def require_api_key(f):
     @functools.wraps(f)
@@ -805,51 +814,39 @@ def extract_text_from_pdf(file_path):
 
 def extract_text_from_plain(file_path):
     """Extracts text from plain text files (txt, md, py, etc.). Tries common encodings."""
-    encodings_to_try = ['utf-8', 'cp949', 'euc-kr', 'latin-1']
-    for enc in encodings_to_try:
+    encs = ['utf-8', 'cp949', 'euc-kr', 'latin-1']
+    for enc in encs:
         try:
-            with open(file_path, 'r', encoding=enc) as f:
-                text = f.read()
-            print(f"Extracted {len(text)} characters from plain text file: {os.path.basename(file_path)} using {enc}")
+            with open(file_path, 'r', encoding=enc) as f: text = f.read()
+            print(f"Extracted {len(text)} chars from plain text: {os.path.basename(file_path)} using {enc}")
             return text
-        except UnicodeDecodeError:
-            continue
-        except Exception as e:
-            print(f"Error extracting text from plain file {file_path} with {enc}: {e}")
-            # Stop trying if a non-decode error occurs
-            return None
-    # If all encodings fail, try reading as binary with replacement
-    try:
-        with open(file_path, 'rb') as f:
-            binary_content = f.read()
-        text = binary_content.decode('utf-8', errors='replace')
-        print(f"Extracted {len(text)} characters from plain text file (binary fallback): {os.path.basename(file_path)}")
+        except UnicodeDecodeError: continue
+        except Exception as e: print(f"Error plain extract {file_path} with {enc}: {e}"); return None
+    try: # Fallback binary read
+        with open(file_path, 'rb') as f: b_content = f.read()
+        text = b_content.decode('utf-8', errors='replace')
+        print(f"Extracted {len(text)} chars plain (binary fallback): {os.path.basename(file_path)}")
         return text
-    except Exception as e:
-        print(f"Final fallback error reading plain text file {file_path}: {e}")
-        return None
+    except Exception as e: print(f"Final fallback plain error {file_path}: {e}"); return None
 
 def chunk_text(text, chunk_size=500, chunk_overlap=50):
     """Splits text into chunks with overlap (simple character-based)."""
-    if not text:
-        return []
-    chunks = []
-    start = 0
+    if not text: return []
+    chunks = []; start = 0
     while start < len(text):
-        end = start + chunk_size
-        chunks.append(text[start:end])
-        start += chunk_size - chunk_overlap # Move start forward with overlap
-        if start >= len(text): # Prevent infinite loop on very short overlaps
-             break
+        end = start + chunk_size; chunks.append(text[start:end])
+        start += chunk_size - chunk_overlap
+        if start >= len(text): break
     print(f"Split text into {len(chunks)} chunks.")
     return chunks
 
 def get_embeddings(texts):
     """Generates embeddings for a list of texts using the loaded model."""
-    if not embedding_model or not texts:
+    if embedding_model is None or not texts:
+        print("Warning/Error: get_embeddings called but model is not loaded or texts empty.")
         return None
     try:
-        embeddings = embedding_model.encode(texts, convert_to_tensor=False) # Get numpy arrays
+        embeddings = embedding_model.encode(texts, convert_to_tensor=False)
         print(f"Generated {len(embeddings)} embeddings.")
         return embeddings
     except Exception as e:
@@ -858,23 +855,15 @@ def get_embeddings(texts):
 
 def find_relevant_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
     """Finds top_k most relevant chunks based on cosine similarity."""
-    if query_embedding is None or chunk_embeddings is None or not chunks:
-        return []
-    # Calculate cosine similarities
-    # Normalize embeddings for efficient cosine similarity calculation
+    if query_embedding is None or chunk_embeddings is None or not chunks: return []
     query_norm = query_embedding / np.linalg.norm(query_embedding)
     chunk_norms = chunk_embeddings / np.linalg.norm(chunk_embeddings, axis=1)[:, np.newaxis]
     similarities = np.dot(chunk_norms, query_norm)
-
-    # Get top_k indices
-    # Use partition for efficiency if top_k is small relative to total chunks
-    # For simplicity, using argsort here
-    sorted_indices = np.argsort(similarities)[::-1] # Sort descending
+    sorted_indices = np.argsort(similarities)[::-1]
     top_indices = sorted_indices[:top_k]
-
     relevant_chunks = [(chunks[i], similarities[i]) for i in top_indices]
     print(f"Found {len(relevant_chunks)} relevant chunks with similarities: {[f'{s:.3f}' for _, s in relevant_chunks]}")
-    return [chunk for chunk, _ in relevant_chunks] # Return only the chunk text
+    return [chunk for chunk, _ in relevant_chunks]
 
 # --- RAG Helper Functions --- END
 
@@ -882,283 +871,429 @@ def find_relevant_chunks(query_embedding, chunk_embeddings, chunks, top_k=3):
 @app.route('/process_document', methods=['POST'])
 @require_api_key
 def process_document():
-    if not embedding_model:
-        return {"error": "Embedding model not loaded."}, 500
+    # <<< 모델 로딩 상태 확인 (시작 시 로드 실패했는지) >>>
+    if embedding_model is None:
+        print("Error: /process_document called but embedding model failed to load initially.")
+        return jsonify({"error": f"문서 처리 모델 초기 로드 실패: {embedding_model_load_error_msg}"}), 500
 
+    # <<< Lazy Loading 관련 로직 제거 >>>
+    # if embedding_model_status == "not_loaded": ...
+    # elif embedding_model_status == "loading": ...
+    # elif embedding_model_status == "error": ...
+
+    # <<< 이하 로직은 모델 로드 가정 하에 진행 >>>
+    if not request.content_type or not request.content_type.startswith('application/json'):
+        return jsonify({"error": "Request must be JSON."}), 415
     data = request.json
+    if data is None:
+        return jsonify({"error": "Invalid JSON data received."}), 400
     rel_path = data.get('relPath')
     instance_id = data.get('instanceId')
-    file_name = data.get('fileName') # Get filename for extension check
+    file_name = data.get('fileName')
+    drive = data.get('drive')
 
-    if not rel_path or not instance_id or not file_name:
-        return {"error": "Missing required parameters (relPath, instanceId, fileName)."}, 400
+    # <<< drive 관련 검증 코드도 그대로 두어야 합니다 >>>
+    if not rel_path or not instance_id or not file_name or not drive:
+         return jsonify({"error": "Missing required parameters (relPath, instanceId, fileName, drive)."}), 400
+    if drive not in ALLOWED_DRIVES:
+         print(f"Error: Invalid drive '{drive}' received in /process_document request.")
+         return jsonify({"error": f"Invalid drive specified: {drive}"}), 400
+    # drive = get_base_dir() # <<< 이 줄은 주석 처리하거나 없어야 합니다.
 
-    drive = get_base_dir() # Get the current drive
-    full_path = get_validated_path(drive, rel_path) # Validate and get full path
-    file_ext = os.path.splitext(file_name)[1].lower()
+    try:
+        full_path = get_validated_path(drive, rel_path) # <<< 여기서 전달받은 drive 사용 확인
+        
+        file_ext = os.path.splitext(file_name)[1].lower()
+        print(f"Processing document (original method): {rel_path} for instance: {instance_id}")
 
-    print(f"Processing document: {rel_path} for instance: {instance_id}")
+        text = None
+        supported_exts = ['.pdf', '.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.csv', '.xml', '.yaml', '.yml', '.ini', '.cfg', '.log', '.sh', '.bat', '.ps1']
+        if file_ext == '.pdf': text = extract_text_from_pdf(full_path)
+        elif file_ext in supported_exts: text = extract_text_from_plain(full_path)
+        else: return jsonify({"error": f"Unsupported file type for RAG: {file_ext}"}), 415
 
-    text = None
-    if file_ext == '.pdf':
-        text = extract_text_from_pdf(full_path)
-    elif file_ext in ['.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.csv', '.xml', '.yaml', '.yml', '.ini', '.cfg', '.log', '.sh', '.bat', '.ps1']: # Add more supported text extensions here
-        text = extract_text_from_plain(full_path)
-    else:
-        # Note: Add support for docx, pptx etc. here if needed later
-        print(f"Skipping processing for unsupported file type: {file_ext}")
-        return {"error": f"Unsupported file type for RAG: {file_ext}"}, 415
+        if text is None: return jsonify({"error": "Failed to extract text."}), 500
+        chunks = chunk_text(text)
+        if not chunks: return jsonify({"error": "Document empty or could not be chunked."}, 400)
 
-    if text is None:
-        print(f"Failed to extract text from {rel_path}")
-        return {"error": "Failed to extract text from the document."}, 500
+        embeddings = get_embeddings(chunks) # <<< 직접 호출
+        if embeddings is None:
+            # 이 경우는 모델 로드 성공 후 임베딩 생성 실패
+            return jsonify({"error": "Failed to generate embeddings (model loaded)."}), 500
 
-    chunks = chunk_text(text) # Use default chunk size/overlap for now
-    if not chunks:
-        print(f"No chunks generated for {rel_path}")
-        return {"error": "Document is empty or could not be chunked."}, 400
+        document_vector_stores[instance_id] = {
+            'chunks': chunks,
+            'embeddings': embeddings,
+            'rel_path': rel_path
+        }
+        print(f"Successfully processed document (original method) for instance {instance_id}.")
+        return jsonify({"message": f"문서 처리 완료: {len(chunks)}개 청크 생성됨"}), 200
 
-    embeddings = get_embeddings(chunks)
-    if embeddings is None:
-        print(f"Failed to generate embeddings for {rel_path}")
-        return {"error": "Failed to generate embeddings for the document."}, 500
-
-    # Store chunks and embeddings in memory
-    document_vector_stores[instance_id] = {
-        'chunks': chunks,
-        'embeddings': embeddings,
-        'rel_path': rel_path # Store path for potential future use/validation
-    }
-
-    print(f"Successfully processed and stored document for instance {instance_id}. Chunks: {len(chunks)}, Embeddings shape: {embeddings.shape}")
-    return {"message": f"문서 처리 완료: {len(chunks)}개 청크 생성됨"}, 200
+    except FileNotFoundError:
+        print(f"Error: File not found during document processing: {rel_path}")
+        return jsonify({"error": f"파일을 찾을 수 없습니다: {rel_path}"}), 404
+    except Exception as e:
+        print(f"Error processing document {rel_path} for instance {instance_id}: {e}")
+        import traceback
+        traceback.print_exc() # Log the full traceback for debugging
+        return jsonify({"error": f"문서 처리 중 오류 발생: {e}"}), 500
 
 # --- Document Processing Endpoint --- END
 
-# --- Gemini Chat Endpoint --- START
-@app.route('/chat', methods=['POST'])
+# --- Video Processing Helper Functions --- START
+
+# --- Video Processing Helper Functions --- END
+
+
+# --- Video Processing Endpoints --- START
+
+@app.route('/process_video', methods=['POST'])
 @require_api_key
-def chat():
-    if not app.config.get('GEMINI_API_KEY'):
-        return jsonify({"error": "API key not configured."}), 500
+def process_video():
+    # Check API Key configuration first
+    api_key = app.config.get('GEMINI_API_KEY')
+    if not api_key:
+        print("[process_video] Error: Gemini API key not configured.") # Debug log
+        return jsonify({"error": "Gemini API key not configured."}), 500
 
-    # Determine content type and parse data
-    content_type = request.content_type
-    data = None
-    image_file = None
-    instance_id = None # <<< Added for RAG context
+    # Check Content-Type before accessing request.json
+    if not request.content_type or not request.content_type.startswith('application/json'):
+        print("[process_video] Error: Request must be JSON.") # Debug log
+        return jsonify({"error": "Request must be JSON."}), 415
 
-    if content_type.startswith('application/json'):
-        data = request.json
-        instance_id = data.get('instanceId') # <<< Get instanceId from JSON
-    elif content_type.startswith('multipart/form-data'):
-        data = request.form.to_dict()
-        image_file = request.files.get('image')
-        instance_id = data.get('instanceId') # <<< Get instanceId from FormData
-        # Need to parse history from string if it's FormData
-        if 'history' in data:
-            try:
-                data['history'] = json.loads(data['history'])
-            except json.JSONDecodeError:
-                return jsonify({"error": "Invalid history format in form data."}), 400
-    else:
-        return jsonify({"error": "Unsupported Content-Type"}), 415
-
-    if not data:
-        return jsonify({"error": "Invalid request data"}), 400
-
-    message = data.get('message', '')
-    model_name = data.get('model', 'gemini-1.5-flash-latest') # Default to flash
-    history = data.get('history', []) # Expecting list of {'role': 'user'/'model', 'parts': [{'text': '...'}]}
-
-    # Validate history format (simple check)
-    if not isinstance(history, list):
-        history = [] # Reset if format is wrong
-
-    print(f"Received chat request. Model: {model_name}, InstanceID: {instance_id}, History Length: {len(history)}, Image Attached: {image_file is not None}")
-
-    # <<< RAG Logic Integration >>>
-    rag_context = ""
-    is_document_chat = False
-    if instance_id and instance_id in document_vector_stores:
-        is_document_chat = True
-        print(f"Instance {instance_id} found in document store. Applying RAG.")
-        doc_store = document_vector_stores[instance_id]
-        if not message:
-            print("Skipping RAG for empty message in document chat.")
-        elif not embedding_model:
-             print("Skipping RAG because embedding model is not loaded.")
-        else:
-            # Generate embedding for the user's query
-            query_embedding = get_embeddings([message])
-            if query_embedding is not None:
-                relevant_chunks = find_relevant_chunks(
-                    query_embedding[0], # Get the single query embedding
-                    doc_store['embeddings'],
-                    doc_store['chunks'],
-                    top_k=3 # Retrieve top 3 relevant chunks
-                )
-                if relevant_chunks:
-                    rag_context = "\n\n-- 문서 내용 --\n"
-                    rag_context += "\n\n".join(relevant_chunks)
-                    rag_context += "\n--------------\n"
-                    print(f"Added RAG context for instance {instance_id}")
-                else:
-                    print("No relevant chunks found for the query.")
-            else:
-                 print("Failed to generate query embedding.")
-
-    # --- Model Initialization --- (Moved after RAG context generation)
-    try:
-        genai.configure(api_key=app.config['GEMINI_API_KEY'])
-        model = genai.GenerativeModel(model_name)
-    except Exception as e:
-        print(f"Error initializing Gemini model: {e}")
-        return jsonify({"error": f"Failed to initialize model: {e}"}), 500
-
-    # --- Prepare Prompt and History --- 
-    # Construct the final prompt for the model
-    # For RAG, prepend context to the latest user message
-    # For image chats, handle image data
-    # For regular chats, just use the message
-
-    chat_session = model.start_chat(history=history)
-    prompt_parts = []
-
-    # <<< MODIFIED: Construct a single text prompt including RAG context >>>
-    final_prompt_text = ""
-
-    # Append RAG context if available
-    if rag_context:
-        final_prompt_text += rag_context # Prepend RAG context
-
-    # Append user message text
-    if message:
-        final_prompt_text += message # Append user message after RAG context
-
-    # Handle image input (if not a document chat and image exists)
-    # Document chats currently do not support simultaneous image input in this flow
-    image_prompt_part = None # Store potential image part separately
-    if image_file and not is_document_chat:
-        try:
-            img_bytes = image_file.read()
-            # Prepare image part for Gemini API directly
-            image_prompt_part = {
-                "mime_type": image_file.mimetype,
-                "data": img_bytes
-            }
-
-            print(f"Processing image: {image_file.filename}, size: {len(img_bytes)} bytes")
-            # Determine appropriate prompt based on history
-            if not history or len(history) == 0: # Initial image upload
-                # Revised initial prompt for more detailed analysis
-                initial_prompt = (
-                    "이 이미지를 자세히 분석하고 주요 요소, 객체, 장면, 분위기 등을 설명해주세요. "
-                    "가능하다면 텍스트(OCR)도 추출해주세요. "
-                    "분석이 끝나면 이 이미지에 대해 무엇이 궁금한지 물어봐주세요."
-                )
-                # Prepend the initial prompt to the main text
-                final_prompt_text = initial_prompt + ("\n\n" + final_prompt_text if final_prompt_text else "")
-                print("Using detailed initial analysis prompt.")
-            else:
-                # Follow-up question with image context
-                print("Sending follow-up message with image context.")
-        except Exception as e:
-            print(f"Error processing image: {e}")
-            # Decide how to handle: return error or proceed without image?
-            # For now, let's proceed without the image if processing fails
-            image_prompt_part = None # Discard image part on error
-            # Optionally add an error message to the prompt?
-            # final_prompt_text += "\n(이미지 처리 실패)" # Add failure notice to text
-            pass # Continue without image if processing fails
-
-    # --- Construct final prompt parts for API call ---
-    final_api_parts = []
-    if final_prompt_text: # Add the combined text part if it's not empty
-        final_api_parts.append(final_prompt_text)
-    if image_prompt_part: # Add the image part if it exists
-        final_api_parts.append(image_prompt_part)
-
-    # --- Generate Response --- 
-    if not final_api_parts:
-         # Handle cases where there's nothing to send (e.g., empty message and no image/context)
-         print("Prompt is empty, sending default response.")
-         def empty_stream():
-            yield f'event: data\ndata: {{"response": "메시지를 입력해주세요."}}\n\n'
-            yield f'event: end\ndata: {{}}\n\n'
-         return Response(empty_stream(), mimetype='text/event-stream')
-
-    print(f"Sending to Gemini. Final API Parts Count: {len(final_api_parts)}")
-    # print(f"Prompt Parts Content (text only): {[p for p in prompt_parts if isinstance(p, str)]}")
-
-    # --- Streaming Response --- 
-    def stream():
-        try:
-            # Use generate_content with stream=True
-            response_stream = chat_session.send_message(final_api_parts, stream=True)
-
-            for chunk in response_stream:
-                if chunk.parts:
-                    text_part = chunk.parts[0].text
-                    # print(f"Stream chunk: {text_part[:50]}...") # Debug output
-                    # Send data formatted as Server-Sent Events (SSE)
-                    yield f'data: {json.dumps({"response": text_part})}\n\n' # <<< Use standard SSE format
-                # Add safety rating check if needed
-                # if chunk.prompt_feedback and chunk.prompt_feedback.block_reason:
-                #    print(f"Request blocked: {chunk.prompt_feedback.block_reason}")
-                #    yield f'data: {json.dumps({"error": f"요청 차단됨: {chunk.prompt_feedback.block_reason}"})}\n\n'
-                #    return # Stop streaming on block
-
-            # Signal the end of the stream
-            yield f'event: end\ndata: Stream ended\n\n' # <<< Signal end with standard event
-            print("Stream finished.")
-
-        except exceptions.GoogleAPICallError as e:
-            # Handle specific API call errors (e.g., quota, unavailable)
-            print(f"Google API Call Error: {e}")
-            error_message = f"API 호출 오류: {e.message}"
-            if hasattr(e, 'status_code') and e.status_code == 503: # Overloaded
-                 error_message = "모델 사용량 초과(503). 잠시 후 다시 시도해주세요."
-            yield f'data: {json.dumps({"error": error_message})}\n\n'
-            yield f'event: end\ndata: Error occurred\n\n' # <<< Signal end
-        except exceptions.BlockedPromptException as e:
-            # Handle blocked prompts specifically
-            print(f"Blocked Prompt Error: {e}")
-            yield f'data: {json.dumps({"error": f"요청 차단됨 (프롬프트): {e}"})}\n\n'
-            yield f'event: end\ndata: Error occurred\n\n' # <<< Signal end
-        except Exception as e:
-            # Catch-all for other unexpected errors during streaming
-            print(f"Streaming Error: {e}")
-            # traceback.print_exc() # Optional detailed traceback
-            yield f'data: {json.dumps({"error": f"스트리밍 중 오류 발생: {e}"})}\n\n'
-            yield f'event: end\ndata: Error occurred\n\n' # <<< Signal end
-
-    return Response(stream(), mimetype='text/event-stream')
-
-# --- Gemini Chat Endpoint --- END
-
-# --- Document Cache Clearing Endpoint --- START
-@app.route('/clear_document_cache', methods=['POST'])
-@require_api_key
-def clear_document_cache():
     data = request.json
+    # Add check: Ensure data is not None
+    if data is None:
+        print("[process_video] Error: Invalid JSON data received.") # Debug log
+        return jsonify({"error": "Invalid JSON data received."}), 400
+
+    rel_path = data.get('relPath')
+    instance_id = data.get('instanceId')
+    file_name_original = data.get('fileName') # Get original filename for display name
+    drive = data.get('drive') # <<< Get drive from JSON payload >>>
+
+    if not rel_path or not instance_id or not file_name_original or not drive:
+        print(f"[process_video] Error: Missing required parameters. Received: relPath={rel_path}, instanceId={instance_id}, fileName={file_name_original}, drive={drive}") # Debug log
+        return jsonify({"error": "Missing required parameters (relPath, instanceId, fileName, drive)."}), 400
+
+    # <<< Validate the received drive against allowed drives >>>
+    if drive not in ALLOWED_DRIVES:
+         print(f"[process_video] Error: Invalid drive '{drive}' received.") # Debug log
+         return jsonify({"error": f"Invalid drive specified: {drive}"}), 400
+
+    # <<< Use the drive from payload for validation >>>
+    try:
+        full_path = get_validated_path(drive, rel_path)
+    except Exception as validation_err:
+        print(f"[process_video] Error validating path: {validation_err}") # Debug log
+        # Abort or return jsonify based on get_validated_path behavior (it aborts)
+        # If get_validated_path aborts, this might not be reached directly, but good practice
+        return jsonify({"error": f"Path validation failed: {validation_err}"}), 404 # Or appropriate code
+
+    print(f"[process_video] Initiating Gemini File API upload for: {rel_path} (Instance: {instance_id}, Drive: {drive}, Full Path: {full_path})") # Debug log
+
+    try:
+        genai.configure(api_key=api_key)
+        # === Gemini File API Upload ===
+        print("[process_video] Uploading video file to Google...") # Debug log
+        # Use the original filename as the display name for the uploaded file
+        video_file = genai.upload_file(path=full_path, display_name=file_name_original) # type: ignore
+        print(f"[process_video] Upload started: URI={video_file.uri}, Name={video_file.name}") # Debug log
+
+        # === Polling for Processing State ===
+        print("[process_video] Waiting for file processing...", end='') # Debug log
+        polling_start_time = time.time()
+        max_polling_time = 300 # 5 minutes timeout for polling
+        while video_file.state.name == "PROCESSING":
+            if time.time() - polling_start_time > max_polling_time:
+                print("\n[process_video] Error: Polling timeout reached.") # Debug log
+                # Attempt to delete the potentially stuck file
+                try: genai.delete_file(name=video_file.name); print(f"[process_video] Cleaned up file {video_file.name} after timeout.") # type: ignore
+                except Exception as del_err: print(f"[process_video] Warning: Failed to cleanup {video_file.name} after timeout: {del_err}")
+                return jsonify({"error": "File processing timed out."}), 500
+
+            print('.', end='')
+            time.sleep(5) # Increase polling interval slightly to 5 seconds
+            try:
+                video_file = genai.get_file(name=video_file.name) # type: ignore
+                print(f" PState: {video_file.state.name}", end='') # Log current state during poll
+            except Exception as get_err:
+                 print(f"\n[process_video] Error getting file status during polling: {get_err}") # Debug log
+                 # Decide how to handle polling error (e.g., retry, abort)
+                 # For now, aborting
+                 return jsonify({"error": f"Error checking file status: {get_err}"}), 500
+
+        print(' Done.')
+
+        if video_file.state.name == "FAILED":
+            print(f"[process_video] File processing failed: {video_file.name}") # Debug log
+            # Attempt to delete the failed file from Google
+            try:
+                genai.delete_file(name=video_file.name) # type: ignore
+                print(f"[process_video] Cleaned up failed file: {video_file.name}")
+            except Exception as delete_err:
+                print(f"[process_video] Warning: Failed to clean up failed file {video_file.name}: {delete_err}")
+            return jsonify({"error": "File processing failed on Google's side."}), 500
+        elif video_file.state.name != "ACTIVE":
+             print(f"[process_video] File ended in unexpected state: {video_file.state.name}") # Debug log
+             return jsonify({"error": f"File processing ended in unexpected state: {video_file.state.name}"}), 500
+
+        # Store URI and Google's file name
+        video_processing_state[instance_id] = {
+            'rel_path': rel_path, # Keep local path for reference if needed
+            'file_uri': video_file.uri,
+            'file_name_google': video_file.name # Store Google's internal name for deletion
+        }
+        print(f"[process_video] Video processing complete and state stored for instance {instance_id}: {video_processing_state[instance_id]}") # Debug log
+
+        return jsonify({
+            "message": f"영상 파일 업로드 및 처리 완료: {video_file.display_name}",
+            "fileUri": video_file.uri
+        }), 200
+
+    except FileNotFoundError:
+        print(f"[process_video] Error: Local video file not found at {full_path}") # Debug log
+        return jsonify({"error": "Local video file not found."}), 404
+    except exceptions.GoogleAPICallError as e:
+         print(f"[process_video] Gemini API Call Error: {e}") # Debug log
+         return jsonify({"error": f"Gemini API Error: {e.message}"}), 500
+    except Exception as e:
+        print(f"[process_video] Unexpected error: {e}") # Debug log
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "An unexpected error occurred during video processing."}), 500
+
+# --- Video Processing Endpoints --- END
+
+# --- Instance Cache Clearing Endpoint --- START
+@app.route('/clear_instance_cache', methods=['POST'])
+@require_api_key
+def clear_instance_cache():
+    # Check Content-Type before accessing request.json
+    if not request.content_type or not request.content_type.startswith('application/json'):
+        return jsonify({"error": "Request must be JSON."}), 415
+
+    data = request.json
+    # Add check: Ensure data is not None
+    if data is None:
+        return jsonify({"error": "Invalid JSON data received."}), 400
+
     instance_id = data.get('instanceId')
 
     if not instance_id:
         return jsonify({"error": "Missing instanceId parameter."}), 400
 
+    cleared_doc = False
+    cleared_video = False
+    google_file_deleted = False
+
+    # Clear from document store
     if instance_id in document_vector_stores:
         del document_vector_stores[instance_id]
+        cleared_doc = True
         print(f"Cleared document cache for instance: {instance_id}")
-        # Also trigger garbage collection potentially?
+
+    # Clear from video store and delete from Google
+    if instance_id in video_processing_state:
+        state = video_processing_state[instance_id]
+        file_name_google = state.get('file_name_google')
+        del video_processing_state[instance_id]
+        cleared_video = True
+        print(f"Cleared local video processing state for instance: {instance_id}")
+
+        if file_name_google:
+            api_key = app.config.get('GEMINI_API_KEY')
+            if api_key:
+                try:
+                    print(f"Attempting to delete Google file: {file_name_google}")
+                    genai.configure(api_key=api_key)
+                    genai.delete_file(name=file_name_google) # type: ignore
+                    google_file_deleted = True
+                    print(f"Successfully deleted Google file: {file_name_google}")
+                except exceptions.NotFound:
+                     print(f"Google file {file_name_google} not found for deletion (already deleted?).")
+                     google_file_deleted = True # Consider it deleted if not found
+                except exceptions.GoogleAPICallError as e:
+                     print(f"Error deleting Google file {file_name_google}: {e}")
+                     # Decide if this should be a failure or just a warning
+                except Exception as e:
+                     print(f"Unexpected error deleting Google file {file_name_google}: {e}")
+            else:
+                print(f"Cannot delete Google file {file_name_google}: API key not configured.")
+        else:
+            print(f"No Google file name found in state for instance {instance_id}, skipping deletion.")
+
+    if cleared_doc or cleared_video:
         # import gc
-        # gc.collect()
-        return jsonify({"message": f"Cache cleared for instance {instance_id}"}), 200
+        # gc.collect() # Optional: trigger garbage collection
+        return jsonify({
+            "message": f"Cache cleared for instance {instance_id} (Doc: {cleared_doc}, Video: {cleared_video}, Google File Deleted: {google_file_deleted})"
+        }), 200
     else:
         print(f"Attempted to clear cache for non-existent instance: {instance_id}")
-        return jsonify({"error": "Instance ID not found in cache."}), 404
+        return jsonify({"error": "Instance ID not found in any cache."}), 404
 
-# --- Document Cache Clearing Endpoint --- END
+# --- Instance Cache Clearing Endpoint --- END
+
+# --- Gemini Chat Endpoint --- START
+@app.route('/chat', methods=['POST'])
+@require_api_key
+def chat():
+    # <<< 모델 상태 변수 불필요 >>>
+    # global embedding_model_status, embedding_model
+
+    # ... (요청 파싱 로직 동일) ...
+    if not app.config.get('GEMINI_API_KEY'):
+        print("[chat] Error: API key not configured.") # Debug log
+        return jsonify({"error": "API key not configured."}), 500
+
+    content_type = request.content_type
+    data = None; image_file = None; instance_id = None
+    if content_type.startswith('application/json'):
+        data = request.json
+        if data is None: print("[chat] Error: Invalid JSON data received."); return jsonify({"error": "Invalid JSON data received."}), 400 # Debug log
+        instance_id = data.get('instanceId')
+    elif content_type.startswith('multipart/form-data'):
+        data = request.form.to_dict(); image_file = request.files.get('image'); instance_id = data.get('instanceId')
+        if 'history' in data:
+            try: data['history'] = json.loads(data['history'])
+            except json.JSONDecodeError: print("[chat] Error: Invalid history format."); return jsonify({"error": "Invalid history format."}), 400 # Debug log
+    else: print(f"[chat] Error: Unsupported Content-Type: {content_type}"); return jsonify({"error": "Unsupported Content-Type"}), 415 # Debug log
+
+    if not data: print("[chat] Error: Invalid request data."); return jsonify({"error": "Invalid request data"}), 400 # Debug log
+
+    message = data.get('message', ''); model_name = data.get('model', 'gemini-1.5-flash-latest'); history = data.get('history', [])
+    if not isinstance(history, list): history = []
+    print(f"[chat] Received request. Model: {model_name}, InstanceID: {instance_id}, History: {len(history)} msgs, Image: {image_file is not None}") # Debug log
+
+    # <<< RAG 로직 복원: 모델 로딩 상태 체크 제거 >>>
+    rag_context = ""
+    is_document_chat = False
+    if instance_id and instance_id in document_vector_stores:
+        is_document_chat = True
+        # <<< 모델이 로드되었는지 여부만 체크 (시작 시 로드 실패 대비) >>>
+        if embedding_model is not None:
+            print(f"[chat] Instance {instance_id} found in doc store, applying RAG.") # Debug log
+            doc_store = document_vector_stores[instance_id]
+            if message:
+                query_embedding = get_embeddings([message])
+                if query_embedding is not None:
+                    relevant_chunks = find_relevant_chunks(
+                        query_embedding[0],
+                        doc_store['embeddings'],
+                        doc_store['chunks'],
+                        top_k=3
+                    )
+                    if relevant_chunks:
+                        rag_context = "\n\n-- 문서 내용 --\n" + "\n\n".join(relevant_chunks) + "\n--------------\n"
+                        print(f"[chat] Added RAG context for instance {instance_id}") # Debug log
+                    else: print("[chat] No relevant RAG chunks found.") # Debug log
+                else: print("[chat] Failed to generate query embedding for RAG.") # Debug log
+            else: print("[chat] Skipping RAG for empty message.") # Debug log
+        else:
+             print(f"[chat] Skipping RAG for instance {instance_id}, embedding model not available.") # Debug log
+
+
+    # ... (이하 /chat 엔드포인트의 나머지 로직 동일: 비디오 처리, 프롬프트 준비, API 호출, 스트리밍 등) ...
+    is_video_chat = False; video_part = None
+    if instance_id and instance_id in video_processing_state and not is_document_chat:
+        is_video_chat = True; video_state = video_processing_state[instance_id]; file_uri = video_state.get('file_uri')
+        print(f"[chat] Instance {instance_id} found in video store. URI: {file_uri}") # Debug log
+        if file_uri:
+            try:
+                video_part = genai.Part.from_uri(uri=file_uri) # type: ignore
+                print(f"[chat] Successfully created video Part from URI for instance {instance_id}") # Debug log
+            except Exception as e: print(f"[chat] Error creating video Part for instance {instance_id}: {e}"); video_part = None # Debug log
+        else: print(f"[chat] Warning: Video URI not found in state for instance {instance_id}") # Debug log
+
+    try:
+        genai.configure(api_key=app.config['GEMINI_API_KEY'])
+        model = genai.GenerativeModel(model_name)
+        print(f"[chat] Gemini model '{model_name}' initialized.") # Debug log
+    except Exception as e:
+        print(f"[chat] Error initializing model '{model_name}': {e}") # Debug log
+        return jsonify({"error": f"Failed to initialize model: {e}"}), 500
+
+    chat_session = model.start_chat(history=history); final_prompt_text = ""
+    if rag_context: final_prompt_text += rag_context
+    if message: final_prompt_text += message
+
+    image_prompt_part = None
+    if image_file and not is_document_chat:
+        print(f"[chat] Processing attached image: {image_file.filename} ({image_file.mimetype})") # Debug log
+        try:
+            img_bytes = image_file.read(); image_prompt_part = {"mime_type": image_file.mimetype, "data": img_bytes}
+            print(f"[chat] Image bytes read: {len(img_bytes)}") # Debug log
+            # Check if history is empty and prepend initial analysis prompt for images
+            # Note: This logic might need adjustment depending on desired UX
+            if not history or len(history) == 0:
+                initial_prompt = ("이 이미지를 자세히 분석하고 주요 요소, 객체, 장면, 분위기 등을 설명해주세요. "
+                                "가능하다면 텍스트(OCR)도 추출해주세요. "
+                                "분석이 끝나면 이 이미지에 대해 무엇이 궁금한지 물어봐주세요.")
+                final_prompt_text = initial_prompt + ("\n\n" + final_prompt_text if final_prompt_text else "")
+                print("[chat] Prepended initial image analysis prompt.") # Debug log
+        except Exception as e: print(f"[chat] Error processing image file: {e}"); image_prompt_part = None # Debug log
+
+    final_api_parts = []
+    if final_prompt_text: final_api_parts.append(final_prompt_text)
+    # Ensure image part is added ONLY if it's an image chat (not video, not just RAG)
+    if image_prompt_part and not is_video_chat:
+         final_api_parts.append(image_prompt_part)
+         print(f"[chat] Added image part to final API parts.") # Debug log
+    # Ensure video part is added ONLY if it's a video chat
+    if video_part and is_video_chat:
+         final_api_parts.append(video_part)
+         print(f"[chat] Added video part to final API parts.") # Debug log
+
+    # <<< DEBUG LOGGING for final_api_parts >>>
+    print(f"[chat] Final API Parts prepared ({len(final_api_parts)} parts):") # Debug log
+    for i, part in enumerate(final_api_parts):
+        if isinstance(part, str):
+            print(f"  Part {i}: String (length={len(part)}) - Preview: '{part[:100]}...'" if len(part) > 100 else f"  Part {i}: String - '{part}'") # Debug log
+        elif isinstance(part, dict) and 'mime_type' in part and 'data' in part:
+            print(f"  Part {i}: Image/Data - MimeType: {part['mime_type']}, Data Length: {len(part['data'])}") # Debug log
+        elif hasattr(part, 'uri'): # Assuming it's a genai.Part object with a URI
+            print(f"  Part {i}: URI Part - URI: {part.uri}") # Debug log
+        else:
+            print(f"  Part {i}: Unknown type - {type(part)}") # Debug log
+    # <<< END DEBUG LOGGING >>>
+
+    if not final_api_parts:
+        print("[chat] No content to send, returning empty message.") # Debug log
+        def empty_stream(): yield f'event: data\ndata: {{"response": "메시지를 입력해주세요."}}\n\n'; yield f'event: end\ndata: {{}}\n\n'
+        return Response(empty_stream(), mimetype='text/event-stream')
+
+    print(f"[chat] Sending {len(final_api_parts)} parts to Gemini model {model_name}...") # Debug log
+
+    def stream():
+        try:
+            response_stream = chat_session.send_message(final_api_parts, stream=True)
+            print(f"[chat] Stream initiated.") # Debug log
+            for chunk in response_stream:
+                if chunk.parts:
+                     # print(f"[chat] Stream chunk received: {chunk.parts[0].text[:50]}...") # Verbose: log each chunk
+                     yield f'data: {json.dumps({"response": chunk.parts[0].text})}\n\n'
+                else:
+                     print("[chat] Stream chunk received with no parts.") # Debug log
+            print("[chat] Stream finished.") # Debug log
+            yield f'event: end\ndata: Stream ended\n\n'
+        except exceptions.GoogleAPICallError as e:
+            error_message = f"API 호출 오류: {e.message}"
+            print(f"[chat] GoogleAPICallError: {error_message}") # Debug log
+            if "503" in error_message or "overload" in error_message.lower(): error_message = "모델 사용량 초과(503)."
+            yield f'data: {json.dumps({"error": error_message})}\n\n'; yield f'event: end\ndata: Error occurred\n\n'
+        except BlockedPromptException as e:
+            print(f"[chat] BlockedPromptException: {e}") # Debug log
+            yield f'data: {json.dumps({"error": f"요청 차단됨: {e}"})}\n\n'; yield f'event: end\ndata: Error occurred\n\n'
+        except Exception as e:
+            print(f"[chat] Exception during streaming: {e}") # Debug log
+            import traceback
+            traceback.print_exc() # Log full traceback for unexpected errors
+            yield f'data: {json.dumps({"error": f"스트리밍 중 예상치 못한 오류 발생: {e}"})}\n\n'; yield f'event: end\ndata: Error occurred\n\n'
+
+    return Response(stream(), mimetype='text/event-stream')
+
+# --- Gemini Chat Endpoint --- END
 
 # --- Gemini Audio Chat Endpoint --- START
 @app.route('/chat_audio', methods=['POST'])
@@ -1229,5 +1364,9 @@ def handle_audio_chat():
         return {"error": error_msg}, 500
 # --- Gemini Audio Chat Endpoint --- END
 
+# <<< 앱 실행 부분 복원: 스레드 로직 제거 >>>
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    # 모델 로딩은 스크립트 상단에서 이미 시도됨
+    print("Starting Flask server (initial model load attempted).")
+    # Flask 앱 실행
+    app.run(host='0.0.0.0', port=5000, debug=True) # debug=True 유지 시 재시작 시 모델 다시 로드 시도
