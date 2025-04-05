@@ -300,8 +300,59 @@
 
       // ... other functions (savePlayerState, loadPlayerState, formatTime) ...
 
-      function initMiniPlayer() {
-          miniPlayer = document.getElementById('mini-audio-player');
+      // <<< NEW Function to update the playlist UI >>>
+      function updatePlaylistUI() {
+          const playlistElement = document.getElementById('mini-player-playlist');
+          if (!playlistElement) return;
+
+          playlistElement.innerHTML = ''; // Clear existing list
+
+          if (audioPlaylist.length === 0) {
+              playlistElement.style.display = 'none'; // Hide if empty
+              return;
+          }
+
+          playlistElement.style.display = 'block'; // Show if not empty
+
+          audioPlaylist.forEach((track, index) => {
+              const li = document.createElement('li');
+              li.textContent = track.title;
+              li.title = track.title; // Tooltip for long names
+              li.dataset.index = index; // Store index for click handler
+
+              if (index === currentTrackIndex) {
+                  li.classList.add('playing'); // Highlight the currently playing track
+              }
+
+              playlistElement.appendChild(li);
+          });
+           // Scroll the currently playing item into view if the list is scrollable
+           const playingItem = playlistElement.querySelector('.playing');
+           if (playingItem && playlistElement.scrollHeight > playlistElement.clientHeight) {
+               playingItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+           }
+      }
+
+      function initMiniPlayer(retryCount = 0) { // <<< Add retryCount parameter
+          const MAX_RETRIES = 50; // Limit retries to prevent infinite loops
+
+          const playerContainer = document.getElementById('mini-audio-player');
+
+          if (!playerContainer) {
+              if (retryCount < MAX_RETRIES) {
+                   console.log(`Mini Player container not found, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
+                  requestAnimationFrame(() => initMiniPlayer(retryCount + 1)); // Retry on next frame
+                  return; // Stop execution for this attempt
+              } else {
+                  console.error("Mini Player container (#mini-audio-player) not found after multiple retries. Initialization failed.");
+                  return; // Give up after max retries
+              }
+          }
+
+          console.log("Mini Player container found. Proceeding with initialization.");
+
+          // --- Now that container is found, get other elements ---
+          miniPlayer = playerContainer; // Already found
           miniPlayerTitle = document.getElementById('mini-player-title');
           miniPlayerPlayPauseBtn = document.getElementById('mini-player-playpause');
           miniPlayerNextBtn = document.getElementById('mini-player-next');
@@ -309,103 +360,122 @@
           miniPlayerCloseBtn = document.getElementById('mini-player-close');
           miniPlayerProgress = document.getElementById('mini-player-progress');
           miniPlayerTime = document.getElementById('mini-player-time');
-          miniPlayerVolume = document.getElementById('mini-player-volume'); // <<< Get volume slider
+          miniPlayerVolume = document.getElementById('mini-player-volume');
+          const playlistElement = document.getElementById('mini-player-playlist');
 
-          if (!miniPlayer || !miniPlayerTitle || !miniPlayerPlayPauseBtn || !miniPlayerNextBtn || !miniPlayerCloseBtn || !miniPlayerProgress || !miniPlayerTime || !miniPlayerVolume) {
-              console.error("Mini Player elements not found!");
-              return;
+
+          if (!miniPlayerTitle || !miniPlayerPlayPauseBtn || !miniPlayerNextBtn || !miniPlayerPrevBtn || !miniPlayerCloseBtn || !miniPlayerProgress || !miniPlayerTime || !miniPlayerVolume || !playlistElement) {
+              console.error("One or more Mini Player child elements not found! Check IDs inside #mini-audio-player.");
+              // Optional: Maybe try again? Or just fail here.
+              return; // Stop initialization if child elements are missing
           }
 
+          // --- Proceed with rest of initialization ---
           miniPlayerAudio = new Audio();
 
           // Define named event handlers
           handleMiniPlayerLoadedMetadata = () => {
-              if (!isNaN(miniPlayerAudio.duration)) {
-                   miniPlayerProgress.max = miniPlayerAudio.duration;
-                   updatePlayerUI();
-              }
-          };
-          handleMiniPlayerTimeUpdate = () => {
-              if (!isMiniPlayerSeeking && !isNaN(miniPlayerAudio.duration)) {
-                  miniPlayerProgress.value = miniPlayerAudio.currentTime;
-                  updatePlayerUI();
-                  savePlayerState(); // Save state periodically on time update
-              }
-          };
-          handleMiniPlayerEnded = playNextTrack; // Use existing function name
-          handleMiniPlayerError = (e) => {
-              console.error("Mini Player Audio Error:", e);
-              miniPlayerTitle.textContent = "Error loading track";
-              // playNextTrack(); // Option: try next on error
-          };
-          handleMiniPlayerPlay = updatePlayerUI; // Use existing function name
-          handleMiniPlayerPause = updatePlayerUI; // Use existing function name
+                if (!isNaN(miniPlayerAudio.duration)) {
+                     miniPlayerProgress.max = miniPlayerAudio.duration;
+                     updatePlayerUI();
+                }
+            };
+            handleMiniPlayerTimeUpdate = () => {
+                // <<< Add log >>>
+                console.log(`TimeUpdate: currentTime=${miniPlayerAudio.currentTime}, isSeeking=${isMiniPlayerSeeking}`);
+                if (!isMiniPlayerSeeking && !isNaN(miniPlayerAudio.duration)) {
+                    miniPlayerProgress.value = miniPlayerAudio.currentTime;
+                    updatePlayerUI();
+                    savePlayerState(); // Save state periodically on time update
+                }
+            };
+            handleMiniPlayerEnded = playNextTrack; // Use existing function name
+            handleMiniPlayerError = (e) => {
+                console.error("Mini Player Audio Error:", e);
+                miniPlayerTitle.textContent = "Error loading track";
+                // playNextTrack(); // Option: try next on error
+            };
+            handleMiniPlayerPlay = updatePlayerUI; // Use existing function name
+            handleMiniPlayerPause = updatePlayerUI; // Use existing function name
 
-          // Add Event Listeners using named handlers
-          miniPlayerAudio.addEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
-          miniPlayerAudio.addEventListener('timeupdate', handleMiniPlayerTimeUpdate);
-          miniPlayerAudio.addEventListener('ended', handleMiniPlayerEnded);
-          miniPlayerAudio.addEventListener('error', handleMiniPlayerError);
-          miniPlayerAudio.addEventListener('play', handleMiniPlayerPlay); // Update UI on play
-          miniPlayerAudio.addEventListener('pause', handleMiniPlayerPause); // Update UI on pause
+            // Add Event Listeners using named handlers
+            miniPlayerAudio.addEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
+            miniPlayerAudio.addEventListener('timeupdate', handleMiniPlayerTimeUpdate);
+            miniPlayerAudio.addEventListener('ended', handleMiniPlayerEnded);
+            miniPlayerAudio.addEventListener('error', handleMiniPlayerError);
+            miniPlayerAudio.addEventListener('play', handleMiniPlayerPlay); // Update UI on play
+            miniPlayerAudio.addEventListener('pause', handleMiniPlayerPause); // Update UI on pause
 
+            // Event Listeners for Controls
+            miniPlayerPlayPauseBtn.addEventListener('click', () => {
+                if (miniPlayerAudio.paused) {
+                    miniPlayerAudio.play().catch(e => console.error("Play error:", e));
+                } else {
+                    miniPlayerAudio.pause();
+                }
+            });
+            miniPlayerNextBtn.addEventListener('click', playNextTrack);
+            miniPlayerPrevBtn.addEventListener('click', () => {
+                console.log("Previous track functionality: jump to beginning or previous track");
+                if (miniPlayerAudio.currentTime > 3 || currentTrackIndex === 0) { // If more than 3s in or first track, restart current
+                   miniPlayerAudio.currentTime = 0;
+                } else if (currentTrackIndex > 0) { // Go to previous track
+                    loadAndPlayTrack(currentTrackIndex - 1);
+                }
+            });
+            miniPlayerCloseBtn.addEventListener('click', hideMiniPlayer);
 
-          // Event Listeners for Controls (these don't need removal in hideMiniPlayer)
-          miniPlayerPlayPauseBtn.addEventListener('click', () => {
-              if (miniPlayerAudio.paused) {
-                  miniPlayerAudio.play().catch(e => console.error("Play error:", e));
-              } else {
-                  miniPlayerAudio.pause();
-              }
-              // updatePlayerUI(); // Already handled by 'play'/'pause' events
-          });
-          miniPlayerNextBtn.addEventListener('click', playNextTrack);
-          miniPlayerPrevBtn.addEventListener('click', () => {
-              console.log("Previous track functionality: jump to beginning or previous track");
-              if (miniPlayerAudio.currentTime > 3 || currentTrackIndex === 0) { // If more than 3s in or first track, restart current
-                 miniPlayerAudio.currentTime = 0;
-              } else if (currentTrackIndex > 0) { // Go to previous track
-                  loadAndPlayTrack(currentTrackIndex - 1);
-              }
-          });
-          miniPlayerCloseBtn.addEventListener('click', hideMiniPlayer);
+            // Event Listeners for Progress Bar
+            miniPlayerProgress.addEventListener('input', () => {
+                isMiniPlayerSeeking = true;
+                if (!isNaN(miniPlayerAudio.duration)) {
+                   miniPlayerTime.textContent = `${formatTime(miniPlayerProgress.value)} / ${formatTime(miniPlayerAudio.duration)}`;
+                }
+            });
+            miniPlayerProgress.addEventListener('change', () => {
+                if (!isNaN(miniPlayerAudio.duration)) {
+                    miniPlayerAudio.currentTime = miniPlayerProgress.value;
+                }
+                isMiniPlayerSeeking = false;
+                if (!miniPlayerAudio.paused) {
+                   miniPlayerAudio.play().catch(e => console.error("Seek->Play error:", e));
+                }
+            });
 
-          // Event Listeners for Progress Bar
-          miniPlayerProgress.addEventListener('input', () => {
-              isMiniPlayerSeeking = true;
-              if (!isNaN(miniPlayerAudio.duration)) {
-                 miniPlayerTime.textContent = `${formatTime(miniPlayerProgress.value)} / ${formatTime(miniPlayerAudio.duration)}`;
-              }
-          });
-          miniPlayerProgress.addEventListener('change', () => {
-              if (!isNaN(miniPlayerAudio.duration)) {
-                  miniPlayerAudio.currentTime = miniPlayerProgress.value;
-              }
-              isMiniPlayerSeeking = false;
-              if (!miniPlayerAudio.paused) {
-                 miniPlayerAudio.play().catch(e => console.error("Seek->Play error:", e));
-              }
-          });
+            // Volume Control Listener
+            miniPlayerVolume.addEventListener('input', () => {
+                miniPlayerAudio.volume = miniPlayerVolume.value;
+                savePlayerState(); // Save volume change
+            });
 
-          // <<< Volume Control Listener >>>
-          miniPlayerVolume.addEventListener('input', () => {
-              miniPlayerAudio.volume = miniPlayerVolume.value;
-              savePlayerState(); // Save volume change
-          });
+            // Playlist Click Listener
+            playlistElement.addEventListener('click', (event) => {
+                if (event.target && event.target.tagName === 'LI') {
+                    const indexToPlay = parseInt(event.target.dataset.index, 10);
+                    if (!isNaN(indexToPlay) && indexToPlay >= 0 && indexToPlay < audioPlaylist.length) {
+                         if (indexToPlay !== currentTrackIndex) { // Only play if it's not the current track
+                              console.log(`Playlist item clicked: index ${indexToPlay}, title: ${audioPlaylist[indexToPlay].title}`);
+                              loadAndPlayTrack(indexToPlay);
+                         } else {
+                             console.log(`Clicked the currently playing track (index ${indexToPlay}).`);
+                         }
+                    }
+                }
+            });
 
-          console.log("Mini Player Initialized.");
-          // Attempt to load state after initialization
-          loadPlayerState();
-      }
+            console.log("Mini Player Initialized Successfully.");
+            loadPlayerState(); // Attempt to load state after initialization
+            updatePlaylistUI(); // Initial UI update
+        }
 
       function showMiniPlayer() {
           if (miniPlayer) miniPlayer.style.display = 'flex';
+          updatePlaylistUI(); // <<< Update UI when shown >>>
       }
 
       function hideMiniPlayer() {
-          if (miniPlayer) miniPlayer.style.display = 'none';
+          // Remove audio event listeners first
           if (miniPlayerAudio) {
-              // <<< Remove event listeners first >>>
               if (handleMiniPlayerLoadedMetadata) miniPlayerAudio.removeEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
               if (handleMiniPlayerTimeUpdate) miniPlayerAudio.removeEventListener('timeupdate', handleMiniPlayerTimeUpdate);
               if (handleMiniPlayerEnded) miniPlayerAudio.removeEventListener('ended', handleMiniPlayerEnded);
@@ -413,21 +483,34 @@
               if (handleMiniPlayerPlay) miniPlayerAudio.removeEventListener('play', handleMiniPlayerPlay);
               if (handleMiniPlayerPause) miniPlayerAudio.removeEventListener('pause', handleMiniPlayerPause);
 
-              miniPlayerAudio.pause(); // Pause
-              miniPlayerAudio.src = ''; // Clear src
+              miniPlayerAudio.pause();
+              miniPlayerAudio.src = '';
               try {
-                   miniPlayerAudio.load(); // Explicitly load empty source
+                   miniPlayerAudio.load();
                } catch (e) {
                    console.warn("Error calling load() during hideMiniPlayer:", e);
                }
           }
+
+          // Reset state
           audioPlaylist = [];
           currentTrackIndex = -1;
+
+          // Reset UI elements
           if (miniPlayerTitle) miniPlayerTitle.textContent = "Now Playing...";
           if (miniPlayerProgress) miniPlayerProgress.value = 0;
           if (miniPlayerTime) miniPlayerTime.textContent = "0:00 / 0:00";
           if (miniPlayerPlayPauseBtn) miniPlayerPlayPauseBtn.textContent = '▶️';
-          localStorage.removeItem('miniPlayerState'); // Clear saved state on close
+
+          // Clear saved state
+          localStorage.removeItem('miniPlayerState');
+
+          // Update playlist UI (clears it)
+          updatePlaylistUI();
+
+          // <<< Add the line to hide the player container >>>
+          if (miniPlayer) miniPlayer.style.display = 'none';
+
           console.log("Mini Player Hidden and State Cleared.");
       }
 
@@ -453,17 +536,18 @@
               console.log(`Added to playlist: ${title}. New length: ${audioPlaylist.length}`);
           }
 
-          // <<< CHANGE: Play immediately ONLY if nothing is currently assigned/playing >>>
+          // <<< 여기부터는 이전 수정 로직 유지 >>>
           if (currentTrackIndex === -1 && audioPlaylist.length > 0) {
-              // If idle (no track assigned), play the *last added* track
               const targetIndex = audioPlaylist.length - 1;
               console.log(`Player is idle, playing newly added track at index ${targetIndex}: ${audioPlaylist[targetIndex].title}`);
-              loadAndPlayTrack(targetIndex);
+              loadAndPlayTrack(targetIndex); // This will call updatePlaylistUI
           } else if (currentTrackIndex >= 0) {
               console.log(`Player has an active track (index ${currentTrackIndex}). Added "${title}" to queue.`);
-              // If player is active, just ensure UI reflects potential playlist changes
-              // updatePlaylistUI(); // Placeholder for future UI update
-          }
+              updatePlaylistUI(); // <<< Directly update UI after adding to queue >>>
+          } else {
+               // Case where playlist was empty and track was added, but currentTrackIndex remains -1 (shouldn't happen with current logic)
+               updatePlaylistUI();
+           }
 
           showMiniPlayer(); // Make sure player is visible regardless
       }
@@ -471,45 +555,37 @@
        function loadAndPlayTrack(index) {
           if (index < 0 || index >= audioPlaylist.length || !miniPlayerAudio) {
               console.log("Invalid track index or playlist empty.");
-              // Don't hide player here automatically, might just be an invalid index attempt
               return;
           }
           currentTrackIndex = index;
           const track = audioPlaylist[currentTrackIndex];
           console.log(`Loading track ${index}: ${track.title}`);
-
-          // Pause current playback before changing src
           miniPlayerAudio.pause();
-
           miniPlayerAudio.src = track.url;
           miniPlayerTitle.textContent = track.title;
           miniPlayerProgress.value = 0;
           miniPlayerAudio.load();
           miniPlayerAudio.play()
               .then(() => {
-                   updatePlayerUI();
-                   savePlayerState(); // Save state after starting new track
+                   updatePlayerUI(); // <<< Update UI after starting new track >>>
+                   savePlayerState();
               })
               .catch(e => {
                    console.error("Error playing track:", e);
                    miniPlayerTitle.textContent = "Error playing";
-                   updatePlayerUI();
-                   savePlayerState(); // Save state even if error occurred
+                   updatePlayerUI(); // <<< Update UI even if error occurred >>>
+                   savePlayerState();
                });
-           showMiniPlayer(); // Ensure player is visible when loading a track
+           showMiniPlayer();
       }
 
       function playNextTrack() {
-           // Play the next index in the current playlist array
            const nextIndex = currentTrackIndex + 1;
            if (nextIndex < audioPlaylist.length) {
-              loadAndPlayTrack(nextIndex);
+              loadAndPlayTrack(nextIndex); // This will handle UI update
            } else {
               console.log("End of playlist reached.");
-              // Optionally loop back to the start?
-              // loadAndPlayTrack(0);
-              // Or just stop and hide:
-              hideMiniPlayer();
+              hideMiniPlayer(); // This will handle UI update (clearing)
            }
       }
 
@@ -520,6 +596,9 @@
 
           const currentTime = miniPlayerAudio.currentTime || 0;
           const duration = miniPlayerAudio.duration || 0;
+          // <<< Add log >>>
+          console.log(`UpdateUI: currentTime=${currentTime}, duration=${duration}, isSeeking=${isMiniPlayerSeeking}`);
+
           if (!isNaN(duration) && duration > 0) { // Check duration > 0
               miniPlayerTime.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
               if (miniPlayerProgress.max != duration) {
@@ -546,6 +625,30 @@
                miniPlayerTitle.textContent = "Now Playing...";
            }
            // Volume is handled by its own event listener + state loading
+           // <<< Update Playlist UI from here as well >>>
+           const playlistElement = document.getElementById('mini-player-playlist');
+           if (playlistElement) {
+                playlistElement.innerHTML = '';
+                if (audioPlaylist.length > 0) {
+                     playlistElement.style.display = 'block';
+                    audioPlaylist.forEach((track, index) => {
+                        const li = document.createElement('li');
+                        li.textContent = track.title;
+                        li.title = track.title;
+                        li.dataset.index = index;
+                        if (index === currentTrackIndex) {
+                            li.classList.add('playing');
+                        }
+                        playlistElement.appendChild(li);
+                    });
+                    const playingItem = playlistElement.querySelector('.playing');
+                    if (playingItem && playlistElement.scrollHeight > playlistElement.clientHeight) {
+                         playingItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                     }
+                 } else {
+                     playlistElement.style.display = 'none';
+                 }
+           }
       }
       // --- Mini Audio Player Logic --- END
 
@@ -1095,100 +1198,94 @@
           }
 
           function handleFileListSingleClick(e) {
-              let targetLink = e.target.closest('a');
-              let fileEntry = e.target.closest('.file-entry');
-              // Navigate into folder on single click
-              if (targetLink && fileEntry && fileEntry.dataset.isDir === 'true') {
+              let target = e.target;
+              let fileEntry = target.closest('.file-entry');
+
+              // Case 1: Clicked on a folder link (<a> tag inside a directory entry)
+              if (target.tagName === 'A' && fileEntry && fileEntry.dataset.isDir === 'true') {
                    if (e.detail === 1) { // Ensure it's a single click
                        e.preventDefault();
-                       const path = targetLink.getAttribute('href')?.split('path=')[1]?.split('&')[0];
+                       const path = target.getAttribute('href')?.split('path=')[1]?.split('&')[0];
                        if (path !== undefined) {
                            loadFileList(decodeURIComponent(path)); // Calls global loadFileList
                        } else {
-                           console.warn("Could not extract path from folder link:", targetLink.getAttribute('href'));
+                           console.warn("Could not extract path from folder link:", target.getAttribute('href'));
                        }
                    }
                }
-          }
+              // <<< NEW Case 2: Clicked on a file name (<span> tag inside a file entry) >>>
+              else if (target.tagName === 'SPAN' && target.classList.contains('file-name') && fileEntry && fileEntry.dataset.isDir === 'false') {
+                  e.preventDefault(); // Prevent any default span behavior if any
 
-          function handleFileListDoubleClick(e) {
-              const fileEntry = e.target.closest('.file-entry');
-              if (!fileEntry || fileEntry.dataset.isDir === 'true') return; // Ignore double clicks on folders
-              const relPath = fileEntry.dataset.relPath; if (!relPath) { console.warn("DBLClick: Missing relPath"); return; }
-              const fileName = fileEntry.querySelector('.file-name')?.textContent || relPath.split('/').pop();
-              const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+                  const relPath = fileEntry.dataset.relPath;
+                  if (!relPath) { console.warn("Click: Missing relPath"); return; }
 
-              console.log(`[DBLClick] Detected for file: ${fileName}, Ext: ${fileExt}, Path: ${relPath}`); // <<< DEBUG LOG
+                  const fileName = target.textContent || relPath.split('/').pop();
+                  const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
 
-              // Define File Type Categories
-              const llmImageExts=['png','jpg','jpeg','webp','heic','heif'];
-              const llmDocExts=['pdf','txt','md','py','js','html','css','json', 'csv', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'log', 'sh', 'bat', 'ps1']; // <<< EXPANDED RAG types
-              const llmVideoExts=['mp4','mpeg','mov','avi','flv','mpg','webm','wmv','3gpp'];
+                  console.log(`[Click] Detected for file: ${fileName}, Ext: ${fileExt}, Path: ${relPath}`);
 
-              console.log(`[DBLClick] Checking extension against categories...`); // <<< DEBUG LOG
+                  // Define File Type Categories (Copied from handleFileListDoubleClick)
+                  const llmImageExts=['png','jpg','jpeg','webp','heic','heif'];
+                  const llmDocExts=['pdf','txt','md','py','js','html','css','json', 'csv', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'log', 'sh', 'bat', 'ps1'];
+                  const llmVideoExts=['mp4','mpeg','mov','avi','flv','mpg','webm','wmv','3gpp'];
+                  const previewOnlyImageExts=['gif','bmp','svg','ico'];
+                  const previewOnlyAudioExts=['mp3','wav','ogg','aac','flac'];
 
-              const previewOnlyImageExts=['gif','bmp','svg','ico'];
-              const previewOnlyAudioExts=['mp3','wav','ogg','aac','flac'];
-              // basicPreviewTextExts removed as they are now in llmDocExts for RAG
+                  console.log(`[Click] Checking extension against categories...`);
 
-              const allKnownImageExts = llmImageExts.concat(previewOnlyImageExts);
-
-              // Determine Action based on file type
-              if (llmImageExts.includes(fileExt) || llmVideoExts.includes(fileExt)) {
-                  // ACTION: Open Preview + Chat UI for Image/Video
-                  console.log(`[DBLClick] Action: Opening Preview+Chat for LLM ${llmImageExts.includes(fileExt) ? 'Image' : 'Video'}`); // <<< DEBUG LOG
-                  console.log(`Opening Preview+Chat for LLM ${llmImageExts.includes(fileExt) ? 'Image' : 'Video'}: ${fileName}`);
-                  const instanceId = `file-chat-${instanceCounter++}`;
-                  const instanceType = llmImageExts.includes(fileExt) ? 'media' : 'video';
-                  const instanceElements = createPreviewChatInstance(instanceId, fileName, relPath, instanceType); // <<< Pass 'video' type & get elements
-
-                  // <<< Initiate video processing if it's a video file >>>
-                  if (instanceType === 'video') {
-                      console.log(`[DBLClick] Action: Calling initiateVideoProcessing for ${instanceId}`); // <<< DEBUG LOG
-                      // Pass the specific chatMessagesDiv element
-                      initiateVideoProcessing(instanceId, relPath, fileName, instanceElements.messages);
+                  // Determine Action based on file type (Logic moved from handleFileListDoubleClick)
+                  if (llmImageExts.includes(fileExt) || llmVideoExts.includes(fileExt)) {
+                      console.log(`[Click] Action: Opening Preview+Chat for LLM ${llmImageExts.includes(fileExt) ? 'Image' : 'Video'}`);
+                      const instanceId = `file-chat-${instanceCounter++}`;
+                      const instanceType = llmImageExts.includes(fileExt) ? 'media' : 'video';
+                      const instanceElements = createPreviewChatInstance(instanceId, fileName, relPath, instanceType);
+                      if (instanceType === 'video') {
+                          console.log(`[Click] Action: Calling initiateVideoProcessing for ${instanceId}`);
+                          initiateVideoProcessing(instanceId, relPath, fileName, instanceElements.messages);
+                      }
+                  } else if (llmDocExts.includes(fileExt)) {
+                      console.log(`[Click] Action: Opening Preview+Chat for LLM Document`);
+                      const instanceId = `file-chat-${instanceCounter++}`;
+                      createPreviewChatInstance(instanceId, fileName, relPath, 'document');
+                      console.log(`[Click] Action: Calling initiateDocumentProcessing for ${instanceId}`);
+                      initiateDocumentProcessing(instanceId, relPath, fileName);
+                  } else if (previewOnlyImageExts.includes(fileExt)) {
+                      console.log(`[Click] Action: Opening standard modal preview for Image`);
+                      const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
+                      const previewUrl = `/preview_image/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
+                      showPreviewModal('image', previewUrl, fileName);
+                  } else if (previewOnlyAudioExts.includes(fileExt)) {
+                      console.log(`[Click] Action: Adding to Mini Player playlist`);
+                      const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
+                      const streamUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
+                      addToPlaylistAndPlay(streamUrl, fileName);
+                  } else {
+                      console.log(`[Click] Action: Unsupported file type`);
+                      console.log(`Unsupported file type ${fileExt}`);
+                      alert('지원하지 않는 파일 형식입니다.');
                   }
-              } else if (llmDocExts.includes(fileExt)) {
-                  // <<< ACTION: Open Preview + Chat UI for Document (Initiate RAG Processing) >>>
-                  console.log(`[DBLClick] Action: Opening Preview+Chat for LLM Document`); // <<< DEBUG LOG
-                  console.log(`Initiating RAG processing for document: ${fileName}`);
-                  const instanceId = `file-chat-${instanceCounter++}`;
-                  createPreviewChatInstance(instanceId, fileName, relPath, 'document'); // <<< Added type hint
-                  console.log(`[DBLClick] Action: Calling initiateDocumentProcessing for ${instanceId}`); // <<< DEBUG LOG
-                  initiateDocumentProcessing(instanceId, relPath, fileName);
-
-              } else if (previewOnlyImageExts.includes(fileExt)) { // <<< MODIFIED: Separate image and audio handling >>>
-                   // ACTION: Open Standard Modal Preview for non-LLM IMAGE types
-                  console.log(`[DBLClick] Action: Opening standard modal preview for Image`); // <<< DEBUG LOG
-                  const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
-                  const previewUrl = `/preview_image/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-                  showPreviewModal('image', previewUrl, fileName);
-
-              } else if (previewOnlyAudioExts.includes(fileExt)) { // <<< NEW: Handle Audio Files >>>
-                  // ACTION: Add to Mini Player Playlist
-                  console.log(`[DBLClick] Action: Adding to Mini Player playlist`);
-                  const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
-                  const streamUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
-                  addToPlaylistAndPlay(streamUrl, fileName); // Call the new function
-
-              } else {
-                  // ACTION: Unsupported Type
-                  console.log(`[DBLClick] Action: Unsupported file type`); // <<< DEBUG LOG
-                  console.log(`Unsupported file type ${fileExt}`);
-                  alert('지원하지 않는 파일 형식입니다.');
               }
+              // Ignore clicks on other parts of the file entry for now
           }
 
+          /* // <<< COMMENT OUT or REMOVE the original double-click handler >>>
+          function handleFileListDoubleClick(e) {
+              // ... (all the logic previously here is now moved to handleFileListSingleClick) ...
+          }
+          */
+
+          // --- Initialize Mini Player FIRST (with a slight delay) --- <<<<<<<<<<<<<<<<
+          // setTimeout(initMiniPlayer, 0); // <<< Move this call to the end >>>
 
           // --- Attach Event Listeners ---
           const treeElement = document.querySelector('.tree');
           if (treeElement) { treeElement.addEventListener('click', handleTreeClick); }
           else { console.warn("Tree element not found."); }
 
-          // Attach File List Listeners
+          const fileListContainer = document.getElementById('file-list');
           if (fileListContainer) {
               fileListContainer.addEventListener('click', handleFileListSingleClick);
-              fileListContainer.addEventListener('dblclick', handleFileListDoubleClick);
           } else { console.error("File list container (#file-list) not found."); }
 
           // Setup Main Chat Listeners
@@ -1197,9 +1294,6 @@
           // Initialize Main Chat UI
           if (mainChatMessages) { addMessageToChat("안녕하세요! 무엇을 도와드릴까요?", 'assistant', { messages: mainChatMessages }, null, mainChatHistory); }
           else { console.warn("Main chat messages container not found on init."); }
-
-          // Initialize Mini Player
-          initMiniPlayer(); // <<< ADD THIS CALL
 
           // Setup Search Listener
           const searchInput = document.getElementById('searchInput');
@@ -1244,6 +1338,9 @@
           // Initial File List Load
           const initialPath = new URLSearchParams(window.location.search).get('path') || '';
           loadFileList(initialPath);
+
+          // --- Initialize Mini Player LAST --- <<<<<<<<<<<<<<<<
+          initMiniPlayer(); // Initialize after everything else, now with retry logic
 
       }); // ====== End DOMContentLoaded ======
 

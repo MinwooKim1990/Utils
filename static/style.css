@@ -268,6 +268,12 @@ button:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--link);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.file-name:hover {
+  text-decoration: underline;
 }
 .file-actions {
   display: flex;
@@ -844,10 +850,9 @@ button:hover {
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     padding: 12px 15px;
-    z-index: 900; /* Below preview modals */
-    display: flex; /* Use flex to position close button */
-    align-items: flex-start; /* Align close button to top */
-    width: 350px; /* Increase width slightly for playlist */
+    z-index: 900;
+    display: flex;
+    width: 350px;
     transition: var(--transition);
     opacity: 0.95;
 }
@@ -858,10 +863,12 @@ button:hover {
 }
 
 .mini-player-content {
-    flex-grow: 1; /* Take available space */
+    flex-grow: 1;
     display: flex;
     flex-direction: column;
     gap: 8px;
+    min-width: 0;
+    padding-right: 25px;
 }
 
 #mini-player-title {
@@ -871,11 +878,12 @@ button:hover {
     overflow: hidden;
     text-overflow: ellipsis;
     color: var(--fg);
+    max-width: 100%;
 }
 
 .mini-player-controls {
     display: flex;
-    justify-content: center; /* Center buttons */
+    justify-content: center;
     align-items: center;
     gap: 10px;
 }
@@ -883,26 +891,28 @@ button:hover {
 .mini-player-controls button {
     background: none;
     border: none;
-    font-size: 18px; /* Adjust icon size */
+    font-size: 18px;
     cursor: pointer;
     color: var(--link);
     padding: 4px;
     line-height: 1;
+    flex-shrink: 0;
 }
 .mini-player-controls button:hover {
     opacity: 0.8;
-    transform: none; /* Override default button hover */
+    transform: none;
 }
 
 .mini-player-progress-container {
      width: 100%;
+     padding-right: 0;
 }
 
 #mini-player-progress {
     width: 100%;
     height: 5px;
     cursor: pointer;
-    accent-color: var(--link); /* Style the slider */
+    accent-color: var(--link);
     background: var(--border);
     border-radius: 5px;
     margin: 5px 0;
@@ -926,7 +936,6 @@ button:hover {
   border: none;
 }
 
-
 #mini-player-time {
     font-size: 11px;
     color: var(--fg);
@@ -935,6 +944,9 @@ button:hover {
 }
 
 #mini-player-close {
+    position: absolute;
+    top: 8px;
+    right: 8px;
     background: none;
     border: none;
     font-size: 20px;
@@ -944,7 +956,6 @@ button:hover {
     cursor: pointer;
     padding: 0 5px;
     line-height: 1;
-    margin-left: 10px; /* Space between content and close */
 }
 
 #mini-player-close:hover {
