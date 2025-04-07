@@ -206,10 +206,11 @@
       let miniPlayerProgress = null;
       let miniPlayerTime = null;
       let miniPlayerVolume = null; // <<< Volume slider element
+      let miniPlayerPlaylistElement = null; // <<< Playlist UL element
 
       let audioPlaylist = []; // Array of {url: string, title: string}
       let currentTrackIndex = -1;
-      let isMiniPlayerSeeking = false;
+      let isMiniPlayerSeeking = false; // <<< Seeking flag
 
       // Function to save player state to localStorage
       function savePlayerState() {
@@ -298,61 +299,8 @@
           return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
       }
 
-      // ... other functions (savePlayerState, loadPlayerState, formatTime) ...
-
-      // <<< NEW Function to update the playlist UI >>>
-      function updatePlaylistUI() {
-          const playlistElement = document.getElementById('mini-player-playlist');
-          if (!playlistElement) return;
-
-          playlistElement.innerHTML = ''; // Clear existing list
-
-          if (audioPlaylist.length === 0) {
-              playlistElement.style.display = 'none'; // Hide if empty
-              return;
-          }
-
-          playlistElement.style.display = 'block'; // Show if not empty
-
-          audioPlaylist.forEach((track, index) => {
-              const li = document.createElement('li');
-              li.textContent = track.title;
-              li.title = track.title; // Tooltip for long names
-              li.dataset.index = index; // Store index for click handler
-
-              if (index === currentTrackIndex) {
-                  li.classList.add('playing'); // Highlight the currently playing track
-              }
-
-              playlistElement.appendChild(li);
-          });
-           // Scroll the currently playing item into view if the list is scrollable
-           const playingItem = playlistElement.querySelector('.playing');
-           if (playingItem && playlistElement.scrollHeight > playlistElement.clientHeight) {
-               playingItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-           }
-      }
-
-      function initMiniPlayer(retryCount = 0) { // <<< Add retryCount parameter
-          const MAX_RETRIES = 50; // Limit retries to prevent infinite loops
-
-          const playerContainer = document.getElementById('mini-audio-player');
-
-          if (!playerContainer) {
-              if (retryCount < MAX_RETRIES) {
-                   console.log(`Mini Player container not found, retrying... (${retryCount + 1}/${MAX_RETRIES})`);
-                  requestAnimationFrame(() => initMiniPlayer(retryCount + 1)); // Retry on next frame
-                  return; // Stop execution for this attempt
-              } else {
-                  console.error("Mini Player container (#mini-audio-player) not found after multiple retries. Initialization failed.");
-                  return; // Give up after max retries
-              }
-          }
-
-          console.log("Mini Player container found. Proceeding with initialization.");
-
-          // --- Now that container is found, get other elements ---
-          miniPlayer = playerContainer; // Already found
+      function initMiniPlayer() {
+          miniPlayer = document.getElementById('mini-audio-player');
           miniPlayerTitle = document.getElementById('mini-player-title');
           miniPlayerPlayPauseBtn = document.getElementById('mini-player-playpause');
           miniPlayerNextBtn = document.getElementById('mini-player-next');
@@ -360,157 +308,140 @@
           miniPlayerCloseBtn = document.getElementById('mini-player-close');
           miniPlayerProgress = document.getElementById('mini-player-progress');
           miniPlayerTime = document.getElementById('mini-player-time');
-          miniPlayerVolume = document.getElementById('mini-player-volume');
-          const playlistElement = document.getElementById('mini-player-playlist');
+          miniPlayerVolume = document.getElementById('mini-player-volume'); // <<< Get volume slider
+          miniPlayerPlaylistElement = document.getElementById('mini-player-playlist'); // <<< Get playlist UL
 
-
-          if (!miniPlayerTitle || !miniPlayerPlayPauseBtn || !miniPlayerNextBtn || !miniPlayerPrevBtn || !miniPlayerCloseBtn || !miniPlayerProgress || !miniPlayerTime || !miniPlayerVolume || !playlistElement) {
-              console.error("One or more Mini Player child elements not found! Check IDs inside #mini-audio-player.");
-              // Optional: Maybe try again? Or just fail here.
-              return; // Stop initialization if child elements are missing
+          if (!miniPlayer || !miniPlayerTitle || !miniPlayerPlayPauseBtn || !miniPlayerNextBtn || !miniPlayerCloseBtn || !miniPlayerProgress || !miniPlayerTime || !miniPlayerVolume || !miniPlayerPlaylistElement) { // <<< Check playlist element
+              console.error("Mini Player elements not found!");
+              return;
           }
 
-          // --- Proceed with rest of initialization ---
           miniPlayerAudio = new Audio();
 
-          // Define named event handlers
-          handleMiniPlayerLoadedMetadata = () => {
-                if (!isNaN(miniPlayerAudio.duration)) {
-                     miniPlayerProgress.max = miniPlayerAudio.duration;
-                     updatePlayerUI();
-                }
-            };
-            handleMiniPlayerTimeUpdate = () => {
-                // <<< Add log >>>
-                console.log(`TimeUpdate: currentTime=${miniPlayerAudio.currentTime}, isSeeking=${isMiniPlayerSeeking}`);
-                if (!isMiniPlayerSeeking && !isNaN(miniPlayerAudio.duration)) {
-                    miniPlayerProgress.value = miniPlayerAudio.currentTime;
-                    updatePlayerUI();
-                    savePlayerState(); // Save state periodically on time update
-                }
-            };
-            handleMiniPlayerEnded = playNextTrack; // Use existing function name
-            handleMiniPlayerError = (e) => {
-                console.error("Mini Player Audio Error:", e);
-                miniPlayerTitle.textContent = "Error loading track";
-                // playNextTrack(); // Option: try next on error
-            };
-            handleMiniPlayerPlay = updatePlayerUI; // Use existing function name
-            handleMiniPlayerPause = updatePlayerUI; // Use existing function name
+          // Event Listeners for Audio Element
+          miniPlayerAudio.addEventListener('loadedmetadata', () => {
+              if (!isNaN(miniPlayerAudio.duration)) {
+                   miniPlayerProgress.max = miniPlayerAudio.duration;
+                   updatePlayerUI();
+              }
+          });
+          miniPlayerAudio.addEventListener('timeupdate', () => {
+              if (!isMiniPlayerSeeking && !isNaN(miniPlayerAudio.duration)) {
+                  miniPlayerProgress.value = miniPlayerAudio.currentTime;
+                  updatePlayerUI();
+                  savePlayerState(); // Save state periodically on time update
+              }
+          });
+          miniPlayerAudio.addEventListener('ended', playNextTrack);
+          miniPlayerAudio.addEventListener('error', (e) => {
+              console.error("Mini Player Audio Error:", e);
+              miniPlayerTitle.textContent = "Error loading track";
+              // playNextTrack(); // Option: try next on error
+          });
+          miniPlayerAudio.addEventListener('play', updatePlayerUI); // Update UI on play
+          miniPlayerAudio.addEventListener('pause', updatePlayerUI); // Update UI on pause
 
-            // Add Event Listeners using named handlers
-            miniPlayerAudio.addEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
-            miniPlayerAudio.addEventListener('timeupdate', handleMiniPlayerTimeUpdate);
-            miniPlayerAudio.addEventListener('ended', handleMiniPlayerEnded);
-            miniPlayerAudio.addEventListener('error', handleMiniPlayerError);
-            miniPlayerAudio.addEventListener('play', handleMiniPlayerPlay); // Update UI on play
-            miniPlayerAudio.addEventListener('pause', handleMiniPlayerPause); // Update UI on pause
 
-            // Event Listeners for Controls
-            miniPlayerPlayPauseBtn.addEventListener('click', () => {
-                if (miniPlayerAudio.paused) {
-                    miniPlayerAudio.play().catch(e => console.error("Play error:", e));
-                } else {
-                    miniPlayerAudio.pause();
-                }
-            });
-            miniPlayerNextBtn.addEventListener('click', playNextTrack);
-            miniPlayerPrevBtn.addEventListener('click', () => {
-                console.log("Previous track functionality: jump to beginning or previous track");
-                if (miniPlayerAudio.currentTime > 3 || currentTrackIndex === 0) { // If more than 3s in or first track, restart current
-                   miniPlayerAudio.currentTime = 0;
-                } else if (currentTrackIndex > 0) { // Go to previous track
-                    loadAndPlayTrack(currentTrackIndex - 1);
-                }
-            });
-            miniPlayerCloseBtn.addEventListener('click', hideMiniPlayer);
+          // Event Listeners for Controls
+          miniPlayerPlayPauseBtn.addEventListener('click', () => {
+              if (miniPlayerAudio.paused) {
+                  miniPlayerAudio.play().catch(e => console.error("Play error:", e));
+              } else {
+                  miniPlayerAudio.pause();
+              }
+              // updatePlayerUI(); // Already handled by 'play'/'pause' events
+          });
+          miniPlayerNextBtn.addEventListener('click', playNextTrack);
+          miniPlayerPrevBtn.addEventListener('click', () => {
+              console.log("Previous track functionality: jump to beginning or previous track");
+              if (miniPlayerAudio.currentTime > 3 || currentTrackIndex === 0) { // If more than 3s in or first track, restart current
+                 miniPlayerAudio.currentTime = 0;
+              } else if (currentTrackIndex > 0) { // Go to previous track
+                  loadAndPlayTrack(currentTrackIndex - 1);
+              }
+          });
+          miniPlayerCloseBtn.addEventListener('click', hideMiniPlayer);
 
-            // Event Listeners for Progress Bar
-            miniPlayerProgress.addEventListener('input', () => {
-                isMiniPlayerSeeking = true;
-                if (!isNaN(miniPlayerAudio.duration)) {
-                   miniPlayerTime.textContent = `${formatTime(miniPlayerProgress.value)} / ${formatTime(miniPlayerAudio.duration)}`;
-                }
-            });
-            miniPlayerProgress.addEventListener('change', () => {
-                if (!isNaN(miniPlayerAudio.duration)) {
-                    miniPlayerAudio.currentTime = miniPlayerProgress.value;
-                }
-                isMiniPlayerSeeking = false;
-                if (!miniPlayerAudio.paused) {
-                   miniPlayerAudio.play().catch(e => console.error("Seek->Play error:", e));
-                }
-            });
+          // Event Listeners for Progress Bar
+          miniPlayerProgress.addEventListener('input', () => {
+              isMiniPlayerSeeking = true; // Set flag when user starts interacting
+              if (!isNaN(miniPlayerAudio.duration)) {
+                 // Update time display instantly while seeking
+                 miniPlayerTime.textContent = `${formatTime(miniPlayerProgress.value)} / ${formatTime(miniPlayerAudio.duration)}`;
+              }
+          });
+          miniPlayerProgress.addEventListener('change', () => {
+              if (!isNaN(miniPlayerAudio.duration)) {
+                  miniPlayerAudio.currentTime = miniPlayerProgress.value; // Set audio time when user releases slider
+              }
+              isMiniPlayerSeeking = false; // Reset flag
+              if (!miniPlayerAudio.paused) { // If it was playing, resume playback
+                 miniPlayerAudio.play().catch(e => console.error("Seek->Play error:", e));
+              }
+              updatePlayerUI(); // Update button state etc.
+          });
 
-            // Volume Control Listener
-            miniPlayerVolume.addEventListener('input', () => {
-                miniPlayerAudio.volume = miniPlayerVolume.value;
-                savePlayerState(); // Save volume change
-            });
+          // <<< Volume Control Listener >>>
+          miniPlayerVolume.addEventListener('input', () => {
+              miniPlayerAudio.volume = miniPlayerVolume.value;
+              savePlayerState(); // Save volume change
+          });
 
-            // Playlist Click Listener
-            playlistElement.addEventListener('click', (event) => {
-                if (event.target && event.target.tagName === 'LI') {
-                    const indexToPlay = parseInt(event.target.dataset.index, 10);
-                    if (!isNaN(indexToPlay) && indexToPlay >= 0 && indexToPlay < audioPlaylist.length) {
-                         if (indexToPlay !== currentTrackIndex) { // Only play if it's not the current track
-                              console.log(`Playlist item clicked: index ${indexToPlay}, title: ${audioPlaylist[indexToPlay].title}`);
-                              loadAndPlayTrack(indexToPlay);
-                         } else {
-                             console.log(`Clicked the currently playing track (index ${indexToPlay}).`);
-                         }
-                    }
-                }
-            });
+          console.log("Mini Player Initialized.");
+          // Attempt to load state after initialization
+          loadPlayerState();
+      }
 
-            console.log("Mini Player Initialized Successfully.");
-            loadPlayerState(); // Attempt to load state after initialization
-            updatePlaylistUI(); // Initial UI update
-        }
+      // <<< NEW Function to update playlist UI >>>
+      function updatePlaylistUI() {
+          if (!miniPlayerPlaylistElement || !audioPlaylist) {
+               console.log("[updatePlaylistUI] Skipping: Element or playlist not ready.");
+               return;
+           }
+          miniPlayerPlaylistElement.innerHTML = ''; // Clear existing list
+
+          if (audioPlaylist.length === 0) {
+               miniPlayerPlaylistElement.style.display = 'none'; // Hide if empty
+               return;
+           }
+           miniPlayerPlaylistElement.style.display = 'block'; // Show if not empty
+
+          audioPlaylist.forEach((track, index) => {
+              const li = document.createElement('li');
+              li.textContent = track.title;
+              li.title = track.title; // Tooltip for long names
+              li.dataset.index = index;
+              if (index === currentTrackIndex) {
+                  li.classList.add('playing');
+              }
+              li.addEventListener('click', () => {
+                  console.log(`[Playlist Click] Clicked index ${index}`);
+                  loadAndPlayTrack(index);
+              });
+              miniPlayerPlaylistElement.appendChild(li);
+          });
+          console.log("[updatePlaylistUI] Playlist UI updated.");
+      }
 
       function showMiniPlayer() {
           if (miniPlayer) miniPlayer.style.display = 'flex';
-          updatePlaylistUI(); // <<< Update UI when shown >>>
+          updatePlaylistUI(); // <<< Update playlist when showing player
       }
 
       function hideMiniPlayer() {
-          // Remove audio event listeners first
+          if (miniPlayer) miniPlayer.style.display = 'none';
           if (miniPlayerAudio) {
-              if (handleMiniPlayerLoadedMetadata) miniPlayerAudio.removeEventListener('loadedmetadata', handleMiniPlayerLoadedMetadata);
-              if (handleMiniPlayerTimeUpdate) miniPlayerAudio.removeEventListener('timeupdate', handleMiniPlayerTimeUpdate);
-              if (handleMiniPlayerEnded) miniPlayerAudio.removeEventListener('ended', handleMiniPlayerEnded);
-              if (handleMiniPlayerError) miniPlayerAudio.removeEventListener('error', handleMiniPlayerError);
-              if (handleMiniPlayerPlay) miniPlayerAudio.removeEventListener('play', handleMiniPlayerPlay);
-              if (handleMiniPlayerPause) miniPlayerAudio.removeEventListener('pause', handleMiniPlayerPause);
-
-              miniPlayerAudio.pause();
-              miniPlayerAudio.src = '';
-              try {
-                   miniPlayerAudio.load();
-               } catch (e) {
-                   console.warn("Error calling load() during hideMiniPlayer:", e);
-               }
+              miniPlayerAudio.pause(); // <<< Pause first
+              miniPlayerAudio.src = ''; // Then clear src
           }
-
-          // Reset state
           audioPlaylist = [];
           currentTrackIndex = -1;
-
-          // Reset UI elements
           if (miniPlayerTitle) miniPlayerTitle.textContent = "Now Playing...";
           if (miniPlayerProgress) miniPlayerProgress.value = 0;
           if (miniPlayerTime) miniPlayerTime.textContent = "0:00 / 0:00";
           if (miniPlayerPlayPauseBtn) miniPlayerPlayPauseBtn.textContent = '▶️';
-
-          // Clear saved state
-          localStorage.removeItem('miniPlayerState');
-
-          // Update playlist UI (clears it)
-          updatePlaylistUI();
-
-          // <<< Add the line to hide the player container >>>
-          if (miniPlayer) miniPlayer.style.display = 'none';
-
+          localStorage.removeItem('miniPlayerState'); // <<< Clear saved state on close
+          if (miniPlayerPlaylistElement) miniPlayerPlaylistElement.innerHTML = ''; // <<< Clear playlist UI
           console.log("Mini Player Hidden and State Cleared.");
       }
 
@@ -536,18 +467,20 @@
               console.log(`Added to playlist: ${title}. New length: ${audioPlaylist.length}`);
           }
 
-          // <<< 여기부터는 이전 수정 로직 유지 >>>
-          if (currentTrackIndex === -1 && audioPlaylist.length > 0) {
+          // <<< CHANGE: Only play immediately if player is idle >>>
+          // Check if player is not playing (index is -1 OR it's paused and at the beginning)
+          const isPlayerIdle = currentTrackIndex === -1 || (miniPlayerAudio.paused && miniPlayerAudio.currentTime === 0);
+
+          if (isPlayerIdle && audioPlaylist.length > 0) {
+              // If idle, play the *last added* track (which might be the only one)
               const targetIndex = audioPlaylist.length - 1;
               console.log(`Player is idle, playing newly added track at index ${targetIndex}: ${audioPlaylist[targetIndex].title}`);
-              loadAndPlayTrack(targetIndex); // This will call updatePlaylistUI
-          } else if (currentTrackIndex >= 0) {
-              console.log(`Player has an active track (index ${currentTrackIndex}). Added "${title}" to queue.`);
-              updatePlaylistUI(); // <<< Directly update UI after adding to queue >>>
-          } else {
-               // Case where playlist was empty and track was added, but currentTrackIndex remains -1 (shouldn't happen with current logic)
-               updatePlaylistUI();
-           }
+              loadAndPlayTrack(targetIndex);
+          } else if (!isPlayerIdle) {
+              console.log(`Player is currently active. Added "${title}" to queue. It will play after the current track finishes.`);
+              // If player is active, just ensure UI reflects potential playlist changes (e.g., if implementing a visible playlist later)
+              updatePlaylistUI(); // <<< Update UI when adding to queue
+          }
 
           showMiniPlayer(); // Make sure player is visible regardless
       }
@@ -555,38 +488,49 @@
        function loadAndPlayTrack(index) {
           if (index < 0 || index >= audioPlaylist.length || !miniPlayerAudio) {
               console.log("Invalid track index or playlist empty.");
+              // Don't hide player here automatically, might just be an invalid index attempt
               return;
           }
           currentTrackIndex = index;
           const track = audioPlaylist[currentTrackIndex];
           console.log(`Loading track ${index}: ${track.title}`);
+
+          // Pause current playback before changing src
           miniPlayerAudio.pause();
+
           miniPlayerAudio.src = track.url;
           miniPlayerTitle.textContent = track.title;
           miniPlayerProgress.value = 0;
-          miniPlayerAudio.load();
+          miniPlayerAudio.load(); // Important: load the new source
           miniPlayerAudio.play()
               .then(() => {
-                   updatePlayerUI(); // <<< Update UI after starting new track >>>
-                   savePlayerState();
+                   updatePlayerUI();
+                   savePlayerState(); // Save state after starting new track
               })
               .catch(e => {
                    console.error("Error playing track:", e);
                    miniPlayerTitle.textContent = "Error playing";
-                   updatePlayerUI(); // <<< Update UI even if error occurred >>>
-                   savePlayerState();
+                   updatePlayerUI();
+                   savePlayerState(); // Save state even if error occurred
                });
-           showMiniPlayer();
+           updatePlaylistUI(); // <<< Update playlist UI when loading a new track
+           showMiniPlayer(); // Ensure player is visible when loading a track
       }
 
       function playNextTrack() {
+           // Play the next index in the current playlist array
            const nextIndex = currentTrackIndex + 1;
            if (nextIndex < audioPlaylist.length) {
-              loadAndPlayTrack(nextIndex); // This will handle UI update
+              loadAndPlayTrack(nextIndex);
            } else {
               console.log("End of playlist reached.");
-              hideMiniPlayer(); // This will handle UI update (clearing)
+              // Optionally loop back to the start?
+              // loadAndPlayTrack(0);
+              // Or just stop and hide:
+              hideMiniPlayer();
            }
+           updatePlaylistUI(); // <<< Update playlist UI state
+           // Volume is handled by its own event listener + state loading
       }
 
       function updatePlayerUI() {
@@ -596,9 +540,6 @@
 
           const currentTime = miniPlayerAudio.currentTime || 0;
           const duration = miniPlayerAudio.duration || 0;
-          // <<< Add log >>>
-          console.log(`UpdateUI: currentTime=${currentTime}, duration=${duration}, isSeeking=${isMiniPlayerSeeking}`);
-
           if (!isNaN(duration) && duration > 0) { // Check duration > 0
               miniPlayerTime.textContent = `${formatTime(currentTime)} / ${formatTime(duration)}`;
               if (miniPlayerProgress.max != duration) {
@@ -625,30 +566,6 @@
                miniPlayerTitle.textContent = "Now Playing...";
            }
            // Volume is handled by its own event listener + state loading
-           // <<< Update Playlist UI from here as well >>>
-           const playlistElement = document.getElementById('mini-player-playlist');
-           if (playlistElement) {
-                playlistElement.innerHTML = '';
-                if (audioPlaylist.length > 0) {
-                     playlistElement.style.display = 'block';
-                    audioPlaylist.forEach((track, index) => {
-                        const li = document.createElement('li');
-                        li.textContent = track.title;
-                        li.title = track.title;
-                        li.dataset.index = index;
-                        if (index === currentTrackIndex) {
-                            li.classList.add('playing');
-                        }
-                        playlistElement.appendChild(li);
-                    });
-                    const playingItem = playlistElement.querySelector('.playing');
-                    if (playingItem && playlistElement.scrollHeight > playlistElement.clientHeight) {
-                         playingItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-                     }
-                 } else {
-                     playlistElement.style.display = 'none';
-                 }
-           }
       }
       // --- Mini Audio Player Logic --- END
 
@@ -767,7 +684,7 @@
                   micButton: mainMicButton, micStatus: mainMicStatus
               };
               historyArray = mainChatHistory;
-              currentImgRef = { get attachedImageData() { return mainAttachedImageData; }, set attachedImageData(v) { mainAttachedImageData = v; } };
+              // <<< Directly use global mainAttachedImageData for main chat >>>
           }
 
           // --- Validate required elements ---
@@ -782,7 +699,7 @@
           const model = chatElements.modelSelect.value;
 
           // --- Check if message is empty (allow sending if image is attached in MAIN chat) ---
-          let mainChatImageAttached = !isFileChat && currentImgRef?.attachedImageData;
+          let mainChatImageAttached = !isFileChat && mainAttachedImageData; // <<< Directly check global variable
           if (!msg && !mainChatImageAttached && !isFileChat) {
               // Only return if message is empty AND it's the main chat without an image attached
               // File chat always proceeds to send the inherent image
@@ -867,21 +784,22 @@
                   }
               } else {
                   // MAIN CHAT: Send JSON or FormData based on attached image
-                  const mainImageData = currentImgRef?.attachedImageData;
-                  if (mainImageData) {
-                      payload = new FormData();
+                  // <<< Directly check global mainAttachedImageData >>>
+                  if (mainAttachedImageData) { // If image data exists...
+                      payload = new FormData(); // Create FormData
                       payload.append('message', msg || '');
                       payload.append('model', model);
                       payload.append('history', JSON.stringify(historyArray.slice(0, -1)));
-                      payload.append('image', mainImageData);
+                      payload.append('image', mainAttachedImageData); // <<< Append the global image data
                       fetchOpts.body = payload;
-                      // Browser sets Content-Type automatically
-                  } else {
+                      // >>> Browser sets Content-Type automatically for FormData <<<
+                  } else { // If no image data...
                       payload = JSON.stringify({ message: msg, model: model, history: historyArray.slice(0, -1) });
                       fetchOpts.body = payload;
                       fetchOpts.headers = { 'Content-Type': 'application/json' };
                   }
-                  currentImgRef.attachedImageData = null; // Clear main attached image data after preparing payload
+                  // >>> Moved image clearing to AFTER successful send attempt in finally block for robustness <<<
+                  // currentImgRef.attachedImageData = null;
               }
 
               // --- Make API Call ---
@@ -930,6 +848,12 @@
               if(chatElements.micButton) chatElements.micButton.disabled = false; // Check existence
               // Clear main attached image explicitly (redundant but safe)
               if (!isFileChat && currentImgRef) currentImgRef.attachedImageData = null;
+              // <<< Clear main attached image data AFTER the fetch attempt >>>
+              // This ensures it's cleared even if the fetch fails immediately, 
+              // but wasn't sent.
+              if (!isFileChat && currentImgRef) {
+                  clearMainAttachedImage(); // Use the existing function
+              }
           }
       }
 
@@ -948,7 +872,7 @@
       function createPreviewChatInstance(instanceId, fileName, relPath, type) {
           console.log(`Creating instance ${instanceId} for ${fileName} (type: ${type})`); // Log type
 
-          // <<< NEW: Close mini player if opening a video preview >>>
+          // Close mini player if opening a video preview
           if (type === 'video') {
               console.log("Video instance detected, attempting to hide mini player.");
               hideMiniPlayer();
@@ -963,112 +887,136 @@
           const previewArea = document.createElement('div'); previewArea.className = 'preview-area';
           const chatArea = document.createElement('div'); chatArea.className = 'chat-area'; chatArea.style.cssText='display:flex;flex-direction:column;height:100%;overflow:hidden;';
 
+          // Clean up clonedElements definition
           const clonedElements = {
               previewArea: previewArea,
-              modelSelect:null, messages:null, imagePreviewArea:null, imagePreview:null, imageFilename:null, removeImageButton:null, micStatus:null, inputArea:null, imageUploadButton:null, imageUploadInput:null, micButton:null, input:null, sendButton:null
+              modelSelect: null,
+              messages: null,
+              imageUploadInput: null, // For the new file input
+              input: null,            // For the new text input
+              sendButton: null,      // For the new send button
+              processVideoButton: null // For the new process video button
           };
 
-          const cloneConfig = [
-              { mainParentSelector:'.model-selector', elementSelector:'select', cloneId:'modelSelect' },
-              { createNew:'div', cloneId:'messages', newClass:'chat-messages', initialContent:true },
-              { mainId:'image-preview-area', cloneId:'imagePreviewArea', elementType:'div', handleSubElements:true },
-              { mainId:'mic-status', cloneId:'micStatus', elementType:'span', newClass:'mic-status' },
-              { mainId:'chat-input-area', cloneId:'inputArea', elementType:'div', handleSubElements:true }
-          ];
+          // --- 1. Handle Model Selector and Messages Area --- START
+          const modelSelectorContainer = mainChatContainer?.querySelector('.model-selector');
+          const messagesDiv = document.createElement('div');
 
-          cloneConfig.forEach(cfg => { 
-              let cloned = null; 
-              let mainE = cfg.mainId ? document.getElementById(cfg.mainId) : null; 
-              let mainP = cfg.mainParentSelector ? mainChatContainer?.querySelector(cfg.mainParentSelector) : null; 
-              
-              if(cfg.createNew){ 
-                  cloned = document.createElement(cfg.createNew); 
-                  cloned.id = `${instanceId}-${cfg.cloneId}`; 
-                  if(cfg.newClass) cloned.className = cfg.newClass; 
-                  clonedElements[cfg.cloneId] = cloned; 
-                  if(cfg.initialContent && cfg.cloneId === 'messages')
-                      addMessageToChat("파일 질문:", 'assistant', {messages: cloned}); 
-              } else if(mainP){ 
-                  cloned = mainP.cloneNode(true); 
-                  const elIn = cloned.querySelector(cfg.elementSelector); 
-                  if(elIn){ 
-                      elIn.id = `${instanceId}-${cfg.mainId || cfg.cloneId}`; 
-                      clonedElements[cfg.cloneId] = elIn; 
-                  } else console.warn(`Elem ${cfg.elementSelector} not in ${cfg.mainParentSelector}`); 
-              } else if(mainE){ 
-                  cloned = mainE.cloneNode(true); 
-                  cloned.id = `${instanceId}-${cfg.mainId}`; 
-                  clonedElements[cfg.cloneId] = cloned; 
-                  if(cfg.newClass) cloned.className = cfg.newClass; 
-                  if(cfg.handleSubElements){ 
-                      if(cfg.cloneId === 'imagePreviewArea'){ 
-                          cloned.style.display = 'none'; 
-                          const img = cloned.querySelector('#image-preview'); 
-                          if(img){
-                              img.id = `${instanceId}-image-preview`;
-                              clonedElements.imagePreview = img;
-                          } 
-                          const span = cloned.querySelector('#image-filename'); 
-                          if(span){
-                              span.id = `${instanceId}-image-filename`;
-                              clonedElements.imageFilename = span;
-                          } 
-                          const btn = cloned.querySelector('#remove-image-button'); 
-                          if(btn){
-                              btn.id = `${instanceId}-remove-image-button`;
-                              btn.onclick = () => clearAttachedImage(instanceId);
-                              clonedElements.removeImageButton = btn;
-                          } 
-                      } else if(cfg.cloneId === 'inputArea'){ 
-                          const fileInput = document.createElement('input'); 
-                          fileInput.type = 'file';
-                          fileInput.id = `${instanceId}-image-upload`;
-                          fileInput.accept = 'image/*';
-                          fileInput.style.display = 'none'; 
-                          fileInput.onchange = (e) => handleFileImageSelect(e, instanceId); 
-                          clonedElements.imageUploadInput = fileInput; 
-                          cloned.insertBefore(fileInput, cloned.firstChild); 
-                          
-                          const imgBtn = cloned.querySelector('#image-upload-button'); 
-                          if(imgBtn){
-                              imgBtn.id = `${instanceId}-image-upload-button`;
-                              imgBtn.onclick = () => fileInput.click();
-                              clonedElements.imageUploadButton = imgBtn;
-                          } 
-                          
-                          const micBtn = cloned.querySelector('#mic-button'); 
-                          if(micBtn){
-                              micBtn.id = `${instanceId}-mic-button`;
-                              micBtn.disabled = true;
-                              micBtn.title = "Audio(File Disabled)";
-                              clonedElements.micButton = micBtn;
-                          } 
-                          
-                          const inputEl = cloned.querySelector('#chat-input'); 
-                          if(inputEl){
-                              inputEl.id = `${instanceId}-chat-input`;
-                              inputEl.onkeypress = (e) => {
-                                  if(e.key === 'Enter' && !e.shiftKey){
-                                      sendMessage(instanceId);
-                                      e.preventDefault();
-                                  }
-                              };
-                              clonedElements.input = inputEl;
-                          } 
-                          
-                          const sendBtn = cloned.querySelector('#send-button'); 
-                          if(sendBtn){
-                              sendBtn.id = `${instanceId}-send-button`;
-                              sendBtn.onclick = () => sendMessage(instanceId);
-                              clonedElements.sendButton = sendBtn;
-                          } 
-                      } 
-                  } 
-              } else console.warn("Clone failed:", cfg); 
-              
-              if(cloned) chatArea.appendChild(cloned); 
-          });
-          
+          if (modelSelectorContainer) {
+              const clonedModelSelectorDiv = modelSelectorContainer.cloneNode(true);
+              const selectElement = clonedModelSelectorDiv.querySelector('select');
+              if (selectElement) {
+                  selectElement.id = `${instanceId}-model-select`;
+                  clonedElements.modelSelect = selectElement;
+              }
+              chatArea.appendChild(clonedModelSelectorDiv); // Append model selector
+          } else {
+              console.warn("Could not clone model selector.");
+          }
+
+          messagesDiv.id = `${instanceId}-messages`;
+          messagesDiv.className = 'chat-messages';
+          clonedElements.messages = messagesDiv;
+          chatArea.appendChild(messagesDiv); // Append messages area
+          // --- 1. Handle Model Selector and Messages Area --- END
+
+          // --- 2. Create and Append File Upload Area --- START
+          const fileUploadArea = document.createElement('div');
+          fileUploadArea.className = 'file-upload-area'; // Use class for styling
+
+          const fileInput = document.createElement('input');
+          fileInput.type = 'file';
+          fileInput.id = `${instanceId}-file-upload`;
+          fileInput.accept = 'image/*'; // Keep accepting images for now
+          fileInput.style.display = 'none'; // Hide the actual input
+
+          const fileInputLabel = document.createElement('label');
+          fileInputLabel.htmlFor = fileInput.id;
+          fileInputLabel.textContent = '파일 선택';
+          fileInputLabel.className = 'button-like-label'; // Add class for styling (ensure defined in CSS)
+
+          const fileNameSpan = document.createElement('span');
+          fileNameSpan.id = `${instanceId}-file-upload-filename`;
+          fileNameSpan.textContent = '선택된 파일 없음';
+          fileNameSpan.className = 'filename-display'; // Add class for styling (ensure defined in CSS)
+
+          fileInput.onchange = (e) => {
+              // Assuming handleFileImageSelect exists and is intended for file instances
+              handleFileImageSelect(e, instanceId); 
+              const file = e.target.files[0];
+              fileNameSpan.textContent = file ? file.name : '선택된 파일 없음';
+          };
+
+          fileUploadArea.appendChild(fileInput);
+          fileUploadArea.appendChild(fileInputLabel);
+          fileUploadArea.appendChild(fileNameSpan);
+          chatArea.appendChild(fileUploadArea); // Append below messages
+          clonedElements.imageUploadInput = fileInput; // Store reference
+          // --- 2. Create and Append File Upload Area --- END
+
+          // --- 3. Create and Append Chat Input Area --- START
+          const chatInputArea = document.createElement('div');
+          chatInputArea.className = 'chat-input-area'; // Use class for styling
+          chatInputArea.id = `${instanceId}-chat-input-area`
+
+          const textInput = document.createElement('input');
+          textInput.type = 'text';
+          textInput.id = `${instanceId}-chat-input`;
+          textInput.placeholder = '메시지를 입력하세요...';
+          // Add necessary classes or styles if needed, e.g., to ensure it grows
+
+          const sendButton = document.createElement('button');
+          sendButton.id = `${instanceId}-send-button`;
+          sendButton.textContent = '전송';
+          // Add necessary classes or styles
+
+          textInput.onkeypress = (e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                  sendMessage(instanceId);
+                  e.preventDefault();
+              }
+          };
+          sendButton.onclick = () => sendMessage(instanceId);
+
+          chatInputArea.appendChild(textInput);
+          chatInputArea.appendChild(sendButton);
+          chatArea.appendChild(chatInputArea); // Append below file upload area
+
+          clonedElements.input = textInput; // Store reference
+          clonedElements.sendButton = sendButton; // Store reference
+          // --- 3. Create and Append Chat Input Area --- END
+
+          // --- 4. Handle Video Processing Button --- START
+          if (type === 'video') {
+              console.log(`[createPreviewChatInstance] Creating video process button for ${instanceId}`);
+              const processButton = document.createElement('button');
+              processButton.id = `${instanceId}-process-video-button`;
+              processButton.className = 'process-video-button'; // Apply specific styles
+              processButton.innerHTML = '🎞️ 영상 처리 시작';
+              processButton.onclick = () => handleProcessVideoButtonClick(instanceId, relPath, fileName);
+
+              // Insert the button after the model selector
+              const modelSelectorDiv = chatArea.querySelector('.model-selector');
+              if (modelSelectorDiv) {
+                   console.log("[createPreviewChatInstance] Inserting button after model selector.");
+                   modelSelectorDiv.parentNode.insertBefore(processButton, modelSelectorDiv.nextSibling);
+              } else {
+                  // Fallback: append at the beginning of chatArea if model selector not found
+                   console.warn("[createPreviewChatInstance] Model selector not found, prepending button to chatArea.");
+                   chatArea.insertBefore(processButton, chatArea.firstChild);
+              }
+              clonedElements.processVideoButton = processButton; // Store reference
+
+               // Disable input/send for video initially
+               if (clonedElements.input) {
+                   clonedElements.input.disabled = true;
+                   clonedElements.input.placeholder = "영상 처리 시작 버튼을 눌러주세요."; // Changed placeholder
+               }
+               if (clonedElements.sendButton) clonedElements.sendButton.disabled = true;
+               console.log(`[createPreviewChatInstance] Video chat controls disabled initially for ${instanceId}`);
+
+          } // --- 4. Handle Video Processing Button --- END
+
           contentDiv.appendChild(previewArea);
           contentDiv.appendChild(chatArea);
 
@@ -1076,25 +1024,29 @@
           instanceDiv.appendChild(contentDiv);
           document.body.appendChild(instanceDiv);
 
-          // <<< Find messages div AFTER appending to body >>>
-          const messagesDiv = document.getElementById(`${instanceId}-messages`);
-          if (!messagesDiv) {
-               console.error(`CRITICAL: Could not find messages div #${instanceId}-messages after creation!`);
-          }
-          clonedElements.messages = messagesDiv; // Ensure messages reference is correct
+          // <<< Linter Fix: Changed variable name from messagesDiv to messagesElement >>>
+          const messagesElement = document.getElementById(`${instanceId}-messages`);
+          if (!messagesElement) { console.error(`CRITICAL: Could not find messages div #${instanceId}-messages after creation!`); }
+          // <<< Linter Fix: Assign the found element to clonedElements.messages >>>
+          clonedElements.messages = messagesElement;
 
           fileChatInstances[instanceId] = { fileName: fileName, relPath: relPath, elements: clonedElements, history: [], attachedImageData: null, type: type };
-          // Re-add initial message using the found messagesDiv
+
+          // Add initial message AFTER storing instance data
           if (clonedElements.messages) {
-              addMessageToChat("파일 질문:", 'assistant', { messages: clonedElements.messages });
-              const initMsg = clonedElements.messages.lastElementChild?.textContent;
-              if(initMsg) fileChatInstances[instanceId].history.push({ role: 'assistant', parts: [{ text: initMsg }] });
+              const initialMsg = type === 'video' ? "영상 미리보기입니다. 분석하려면 [영상 처리 시작] 버튼을 누르세요." : "파일 미리보기입니다. 질문을 입력하세요.";
+              addMessageToChat(initialMsg, 'assistant', { messages: clonedElements.messages }, null, fileChatInstances[instanceId].history);
           }
 
-          console.log(`Created instance: ${instanceId}`, fileChatInstances[instanceId]);
-          loadPreviewContent(instanceId, relPath, fileName);
+          // Disable input/send for video initially (redundant check, but safe)
+          if (type === 'video') {
+               if (clonedElements.input) clonedElements.input.disabled = true;
+               if (clonedElements.sendButton) clonedElements.sendButton.disabled = true;
+           }
 
-          // Return the cloned elements for direct use
+          console.log(`Created instance: ${instanceId}`, fileChatInstances[instanceId]);
+          loadPreviewContent(instanceId, relPath, fileName); // Load preview content LAST
+
           return clonedElements;
       }
 
@@ -1147,6 +1099,7 @@
 
       function loadPreviewContent(instanceId, relPath, fileName) {
           const instance = fileChatInstances[instanceId];
+          console.log(`[loadPreviewContent] Starting for instance: ${instanceId}, file: ${fileName}, path: ${relPath}`); // Debug Log
           if (!instance || !instance.elements?.previewArea) {
               console.error(`Preview load ERROR: Instance ${instanceId} or previewArea element missing in instance data.`);
               const paDiv = document.getElementById(instanceId)?.querySelector('.preview-area');
@@ -1162,14 +1115,16 @@
           let pUrl=null, pType=null;
           const encP=encodeURIComponent(relPath);
 
+          console.log(`[loadPreviewContent] Determining type for ext: ${ext}`); // Debug Log
           if(vE.includes(ext)){pType='video';pUrl=`/stream/${encP}?drive=${drv}&api_key=${key}`;}else if(aE.includes(ext)){pType='audio';pUrl=`/stream/${encP}?drive=${drv}&api_key=${key}`;}else if(iE.includes(ext)){pType='image';pUrl=`/preview_image/${encP}?drive=${drv}&api_key=${key}`;}else if(tE.includes(ext)){pType='text';pUrl=`/preview_text/${encP}?drive=${drv}&api_key=${key}`;}else if(pE.includes(ext)){pType='pdf';pUrl=`/preview_pdf/${encP}?drive=${drv}&api_key=${key}`;} else { pType = 'unsupported'; }
+          console.log(`[loadPreviewContent] Determined type: ${pType}, URL: ${pUrl}`); // Debug Log
 
           let el;
-          if (pType !== 'unsupported') {
-              console.log(`Loading ${pType} preview for ${relPath} (${fileName}) in ${instanceId}`);
-              if (pType==='video' && pUrl){ el=document.createElement('video');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Video failed.</span>';}; }
-              else if (pType==='audio' && pUrl){ el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Audio failed.</span>';}; }
-              else if (pType==='image' && pUrl){ el=document.createElement('img');el.alt=fileName;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Image failed.</span>';}; }
+          if (pType !== 'unsupported' && pUrl) { // <<< Check pUrl is not null
+              console.log(`[loadPreviewContent] Loading ${pType} preview for ${relPath} (${fileName}) in ${instanceId}`);
+              if (pType==='video'){ el=document.createElement('video');el.controls=true;el.autoplay=false;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Video failed.</span>';}; } // Autoplay false initially for video
+              else if (pType==='audio'){ el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Audio failed.</span>';}; }
+              else if (pType==='image'){ el=document.createElement('img');el.alt=fileName;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Image failed.</span>';}; }
               else if ((pType==='text' || pType==='pdf') && pUrl){ el=document.createElement('iframe');el.style.cssText='width:100%;height:100%;border:none;';el.src=pUrl;el.onload=()=>console.log(`Iframe ${pType} loaded.`);el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Preview failed.</span>';}; }
 
               if(el){ previewArea.innerHTML=''; previewArea.appendChild(el); }
@@ -1188,6 +1143,12 @@
           // (These need to be defined before they are attached below)
           function handleTreeClick(e) {
               let target = e.target;
+              // <<< Prevent clicks on toggle arrow from navigating >>>
+              if (target.tagName.toLowerCase() === 'span' && target.classList.contains('toggle-arrow')) {
+                   e.preventDefault();
+                   toggleChildren(target);
+                   return; // Stop further processing for arrow click
+               }
               if (target.tagName.toLowerCase() === 'a' && target.classList.contains('folder-link')) {
                   e.preventDefault();
                   let li = target.parentElement;
@@ -1198,52 +1159,57 @@
           }
 
           function handleFileListSingleClick(e) {
-              let target = e.target;
-              let fileEntry = target.closest('.file-entry');
+              const fileEntry = e.target.closest('.file-entry');
+              if (!fileEntry) return; // Click was not inside a file entry
 
-              // Case 1: Clicked on a folder link (<a> tag inside a directory entry)
-              if (target.tagName === 'A' && fileEntry && fileEntry.dataset.isDir === 'true') {
-                   if (e.detail === 1) { // Ensure it's a single click
-                       e.preventDefault();
-                       const path = target.getAttribute('href')?.split('path=')[1]?.split('&')[0];
-                       if (path !== undefined) {
-                           loadFileList(decodeURIComponent(path)); // Calls global loadFileList
-                       } else {
-                           console.warn("Could not extract path from folder link:", target.getAttribute('href'));
-                       }
-                   }
-               }
-              // <<< NEW Case 2: Clicked on a file name (<span> tag inside a file entry) >>>
-              else if (target.tagName === 'SPAN' && target.classList.contains('file-name') && fileEntry && fileEntry.dataset.isDir === 'false') {
-                  e.preventDefault(); // Prevent any default span behavior if any
+              if (e.detail !== 1) return; // Ignore multi-clicks handled by the browser (like double-click selecting text)
 
-                  const relPath = fileEntry.dataset.relPath;
-                  if (!relPath) { console.warn("Click: Missing relPath"); return; }
+              e.preventDefault(); // Prevent default behavior for this single click
 
-                  const fileName = target.textContent || relPath.split('/').pop();
+              const isDir = fileEntry.dataset.isDir === 'true';
+              const relPath = fileEntry.dataset.relPath;
+              const fileName = fileEntry.querySelector('.file-name')?.textContent || fileEntry.querySelector('a')?.textContent || (relPath ? relPath.split('/').pop() : 'Unknown');
+
+              if (isDir) {
+                  // Handle folder navigation
+                  console.log(`[Click] Folder: ${fileName}, Path: ${relPath}`);
+                  // Find the actual link element to get the correct path (needed for '..')
+                  const folderLink = fileEntry.querySelector('a');
+                  const targetPath = folderLink?.getAttribute('href')?.split('path=')[1]?.split('&')[0];
+                  if (targetPath !== undefined) {
+                       loadFileList(decodeURIComponent(targetPath));
+                  } else {
+                      console.warn("Could not extract path from folder link:", folderLink?.getAttribute('href'));
+                  }
+              } else {
+                  // Handle file click (Image, Video, Doc, Audio)
+                  if (!relPath) { console.warn("[Click] Missing relPath for file:", fileName); return; }
+
                   const fileExt = fileName.includes('.') ? fileName.split('.').pop().toLowerCase() : '';
+                  console.log(`[Click] File: ${fileName}, Ext: ${fileExt}, Path: ${relPath}`);
 
-                  console.log(`[Click] Detected for file: ${fileName}, Ext: ${fileExt}, Path: ${relPath}`);
-
-                  // Define File Type Categories (Copied from handleFileListDoubleClick)
+                  // Define File Type Categories
                   const llmImageExts=['png','jpg','jpeg','webp','heic','heif'];
                   const llmDocExts=['pdf','txt','md','py','js','html','css','json', 'csv', 'xml', 'yaml', 'yml', 'ini', 'cfg', 'log', 'sh', 'bat', 'ps1'];
                   const llmVideoExts=['mp4','mpeg','mov','avi','flv','mpg','webm','wmv','3gpp'];
                   const previewOnlyImageExts=['gif','bmp','svg','ico'];
                   const previewOnlyAudioExts=['mp3','wav','ogg','aac','flac'];
+                  const msOfficeExts = ['xlsx', 'xls', 'docx', 'doc', 'pptx', 'ppt']; // MS Office types
 
                   console.log(`[Click] Checking extension against categories...`);
 
-                  // Determine Action based on file type (Logic moved from handleFileListDoubleClick)
+                  // Determine Action based on file type
                   if (llmImageExts.includes(fileExt) || llmVideoExts.includes(fileExt)) {
                       console.log(`[Click] Action: Opening Preview+Chat for LLM ${llmImageExts.includes(fileExt) ? 'Image' : 'Video'}`);
                       const instanceId = `file-chat-${instanceCounter++}`;
                       const instanceType = llmImageExts.includes(fileExt) ? 'media' : 'video';
                       const instanceElements = createPreviewChatInstance(instanceId, fileName, relPath, instanceType);
-                      if (instanceType === 'video') {
-                          console.log(`[Click] Action: Calling initiateVideoProcessing for ${instanceId}`);
-                          initiateVideoProcessing(instanceId, relPath, fileName, instanceElements.messages);
-                      }
+
+                      // <<< REMOVE automatic video processing call >>>
+                      // if (instanceType === 'video') {
+                      //     console.log(`[Click] Action: Calling initiateVideoProcessing for ${instanceId}`);
+                      //     initiateVideoProcessing(instanceId, relPath, fileName, instanceElements.messages);
+                      // }
                   } else if (llmDocExts.includes(fileExt)) {
                       console.log(`[Click] Action: Opening Preview+Chat for LLM Document`);
                       const instanceId = `file-chat-${instanceCounter++}`;
@@ -1260,32 +1226,33 @@
                       const drive = "{{ drive|urlencode }}"; const apiKey = "{{ api_key|urlencode }}"; const encodedRelPath = encodeURIComponent(relPath);
                       const streamUrl = `/stream/${encodedRelPath}?drive=${drive}&api_key=${apiKey}`;
                       addToPlaylistAndPlay(streamUrl, fileName);
+                  } else if (msOfficeExts.includes(fileExt)) {
+                      console.log(`[Click] Action: MS Office file - No preview, prompt download?`);
+                      // Maybe just log or offer download directly? For now, do nothing specific.
+                      alert(`MS Office 파일 (${fileName}) 미리보기는 지원되지 않습니다. 필요시 다운로드하여 확인하세요.`);
                   } else {
                       console.log(`[Click] Action: Unsupported file type`);
-                      console.log(`Unsupported file type ${fileExt}`);
-                      alert('지원하지 않는 파일 형식입니다.');
+                      alert(`지원하지 않는 파일 형식입니다: ${fileName}`);
                   }
               }
-              // Ignore clicks on other parts of the file entry for now
           }
 
-          /* // <<< COMMENT OUT or REMOVE the original double-click handler >>>
+          /* REMOVE Double Click Handler
           function handleFileListDoubleClick(e) {
-              // ... (all the logic previously here is now moved to handleFileListSingleClick) ...
+              // ... (all logic removed) ...
           }
           */
 
-          // --- Initialize Mini Player FIRST (with a slight delay) --- <<<<<<<<<<<<<<<<
-          // setTimeout(initMiniPlayer, 0); // <<< Move this call to the end >>>
 
           // --- Attach Event Listeners ---
           const treeElement = document.querySelector('.tree');
           if (treeElement) { treeElement.addEventListener('click', handleTreeClick); }
           else { console.warn("Tree element not found."); }
 
-          const fileListContainer = document.getElementById('file-list');
+          // Attach File List Listener (Single Click Only)
           if (fileListContainer) {
               fileListContainer.addEventListener('click', handleFileListSingleClick);
+              // fileListContainer.removeEventListener('dblclick', handleFileListDoubleClick); // Ensure double-click is removed if previously added
           } else { console.error("File list container (#file-list) not found."); }
 
           // Setup Main Chat Listeners
@@ -1294,6 +1261,9 @@
           // Initialize Main Chat UI
           if (mainChatMessages) { addMessageToChat("안녕하세요! 무엇을 도와드릴까요?", 'assistant', { messages: mainChatMessages }, null, mainChatHistory); }
           else { console.warn("Main chat messages container not found on init."); }
+
+          // Initialize Mini Player
+          initMiniPlayer(); // <<< ADD THIS CALL
 
           // Setup Search Listener
           const searchInput = document.getElementById('searchInput');
@@ -1339,24 +1309,27 @@
           const initialPath = new URLSearchParams(window.location.search).get('path') || '';
           loadFileList(initialPath);
 
-          // --- Initialize Mini Player LAST --- <<<<<<<<<<<<<<<<
-          initMiniPlayer(); // Initialize after everything else, now with retry logic
-
       }); // ====== End DOMContentLoaded ======
 
       // --- >>> NEW Function to initiate document processing (Reverted) <<< ---
       async function initiateDocumentProcessing(instanceId, relPath, fileName) {
           const instance = fileChatInstances[instanceId];
-          if (!instance || !instance.elements?.messages || !instance.elements.input || !instance.elements.sendButton) {
-              console.error(`initDocProc: Instance ${instanceId} or critical elements missing.`);
-              if (instance?.elements?.messages) {
-                  addMessageToChat("오류: 문서 처리 UI 초기화 실패.", 'assistant', instance.elements);
+          // <<< Enhanced Check for instance and elements >>>
+          if (!instance || !instance.elements || !instance.elements.messages || !instance.elements.input || !instance.elements.sendButton) {
+              console.error(`initDocProc Error: Instance (${instanceId}), its elements, or required sub-elements (messages, input, sendButton) are missing.`);
+              // Try to add error message to main chat if instance messages missing
+              const mainMessages = document.getElementById('chat-messages');
+              if (mainMessages && (!instance || !instance.elements || !instance.elements.messages)) {
+                  addMessageToChat(`오류: 문서 처리 UI 초기화 실패 (Instance ID: ${instanceId}). 콘솔을 확인하세요.`, 'assistant', { messages: mainMessages });
+              } else if (instance?.elements?.messages) {
+                  // If only input/button missing, add error to instance chat
+                  addMessageToChat("오류: 문서 처리 UI 초기화 실패. 필수 채팅 요소(입력창/버튼)를 찾을 수 없습니다.", 'assistant', instance.elements);
               }
-              return;
+              return; // Stop execution if critical elements are missing
           }
 
           const chatElements = instance.elements;
-          const processingMessageText = "문서 분석 및 벡터화 작업 중..."; // <<< 수정: 간단한 텍스트 사용
+          const processingMessageText = "문서 분석 및 벡터화 작업 중...";
 
           // Display processing message and disable input
           addMessageToChat(processingMessageText, 'assistant', chatElements, null, null); // <<< 수정: 히스토리에 추가 안 함, 클래스 제거
@@ -1420,26 +1393,34 @@
       }
 
       // --- >>> NEW Functions for Video Processing <<< ---
-      async function initiateVideoProcessing(instanceId, relPath, fileName, chatMessagesDiv) { // <<< Receive chatMessagesDiv as argument
-          // Display processing message
-          const processingMessage = document.createElement('div');
-          processingMessage.className = 'processing-message'; // Assign a class for potential styling
-          processingMessage.textContent = '비디오 처리 요청 중...'; // Add text content
-          chatMessagesDiv.appendChild(processingMessage);
+      async function initiateVideoProcessing(instanceId, relPath, fileName, chatMessagesDiv) {
+          // <<< REMOVE processing message creation and appending >>>
+          // const processingMessage = document.createElement('div');
+          // processingMessage.className = 'processing-message';
+          // processingMessage.textContent = '영상 내용 분석 및 처리 요청 중...';
+          // chatMessagesDiv.appendChild(processingMessage);
 
-          // Ensure chat elements are available for adding messages later
           const instance = fileChatInstances[instanceId];
-          const chatElements = instance ? instance.elements : { messages: chatMessagesDiv }; // Fallback if instance lookup fails unexpectedly
+          const chatElements = instance ? instance.elements : { messages: chatMessagesDiv };
+          const processButton = instance?.elements?.processVideoButton;
+          const loadingIntervalId = processButton?.dataset?.loadingIntervalId;
+
+          // Function to stop loading animation and clear interval ID
+          const stopLoadingAnimation = (buttonElement) => {
+                if (loadingIntervalId) {
+                    clearInterval(loadingIntervalId);
+                    if (buttonElement) delete buttonElement.dataset.loadingIntervalId;
+                }
+            };
 
           if (!chatElements.messages) {
              console.error("initiateVideoProcessing: chatMessagesDiv is not valid or instance elements missing.");
-             // Try removing the processing message if it was added
-             if (processingMessage.parentNode === chatMessagesDiv) {
-                 chatMessagesDiv.removeChild(processingMessage);
-             }
-             return; // Cannot proceed without a valid message container
+             // <<< REMOVE redundant processing message removal >>>
+             // if (processingMessage.parentNode === chatMessagesDiv) chatMessagesDiv.removeChild(processingMessage);
+             stopLoadingAnimation(processButton); // Stop animation if started
+             if (processButton) { processButton.disabled = false; processButton.textContent = "🎞️ 영상 처리 시작"; }
+             return;
           }
-
 
           try {
               const response = await fetch('/process_video', {
@@ -1448,47 +1429,90 @@
                       'Content-Type': 'application/json',
                       'X-Api-Key': "{{ api_key|urlencode }}"
                   },
-                  // <<< ADD drive parameter >>>
                   body: JSON.stringify({ instanceId, relPath, fileName, drive: "{{ drive }}" })
               });
 
-              // Remove processing message *before* adding the result/error message
-              if (processingMessage.parentNode === chatMessagesDiv) {
-                  chatMessagesDiv.removeChild(processingMessage);
-              }
+              // <<< REMOVE redundant processing message removal >>>
+              // if (processingMessage.parentNode === chatMessagesDiv) chatMessagesDiv.removeChild(processingMessage);
+
+              stopLoadingAnimation(processButton); // Stop animation after fetch completes
 
               if (response.ok) {
                   const result = await response.json();
                   console.log("Video processing initiated/completed:", result);
-                  // <<< Use addMessageToChat instead of appendMessage >>>
-                  addMessageToChat(result.message || "비디오 처리가 완료되었습니다. 이제 질문할 수 있습니다.", 'assistant', chatElements, null, instance?.history);
-              } else {
+                  addMessageToChat(result.message || "✅ 비디오 처리가 완료되었습니다. 이제 질문할 수 있습니다.", 'assistant', chatElements, null, instance?.history);
+                  if (processButton) { processButton.textContent = "처리 완료"; /* Keep disabled */ }
+          } else {
                   const errorResult = await response.json().catch(() => ({ error: `영상 처리 중 서버 오류 (Status: ${response.status})` }));
                   const errorText = errorResult.error || `영상 처리 중 오류 발생 (Status: ${response.status})`;
                   console.error("Video processing error response:", errorResult);
-                  // <<< Use addMessageToChat instead of appendMessage >>>
                   addMessageToChat(`❌ 오류: ${errorText}`, 'assistant', chatElements, null, instance?.history);
+                  if (processButton) { processButton.disabled = false; processButton.textContent = "🎞️ 처리 재시도"; }
               }
           } catch (error) {
-               // Remove processing message *before* adding the error message
-              if (processingMessage.parentNode === chatMessagesDiv) {
-                  chatMessagesDiv.removeChild(processingMessage);
-              }
+              // <<< REMOVE redundant processing message removal >>>
+              // if (processingMessage.parentNode === chatMessagesDiv) chatMessagesDiv.removeChild(processingMessage);
+              stopLoadingAnimation(processButton); // Stop animation on catch
               console.error("Error calling /process_video:", error);
-              // <<< Use addMessageToChat instead of appendMessage >>>
               addMessageToChat(`❌ 클라이언트 측 오류: ${error.message}`, 'assistant', chatElements, null, instance?.history);
+              if (processButton) { processButton.disabled = false; processButton.textContent = "🎞️ 처리 재시도"; }
           } finally {
-              // Re-enable input regardless of outcome (ensure elements exist)
-              // Note: Input/Send buttons are part of chatElements if instance exists
-              if (chatElements.input) chatElements.input.disabled = false;
-              if (chatElements.sendButton) chatElements.sendButton.disabled = false;
+              // Re-enable input/send regardless of outcome
+              if (instance && chatElements) {
+                  if (chatElements.input) {
+                       chatElements.input.disabled = false;
+                       chatElements.input.placeholder = "메시지를 입력하세요...";
+                   }
+                  if (chatElements.sendButton) chatElements.sendButton.disabled = false;
+              }
           }
+      }
+
+      // --- NEW: Handler for the process video button ---
+       function handleProcessVideoButtonClick(instanceId, relPath, fileName) {
+          const instance = fileChatInstances[instanceId];
+          if (!instance || !instance.elements) {
+              console.error("Cannot process video: Instance or elements not found for", instanceId);
+              return;
+          }
+
+          const button = instance.elements.processVideoButton;
+          const messagesDiv = instance.elements.messages;
+
+          if (!button) {
+              console.error("Process video button not found for", instanceId);
+              return; // Cannot proceed without the button
+          }
+
+          button.disabled = true;
+          // Start loading animation on the button
+          let dotCount = 1;
+          button.textContent = "처리 중.";
+          const loadingInterval = setInterval(() => {
+              dotCount = (dotCount % 3) + 1;
+              button.textContent = `처리 중${`.`.repeat(dotCount)}`;
+          }, 500); // Change dots every 500ms
+
+          // Store interval ID on the button itself for easy access
+          button.dataset.loadingIntervalId = loadingInterval;
+
+          if (!messagesDiv) {
+               console.error("Cannot process video: Messages div not found for", instanceId);
+               // Stop animation and re-enable button if messagesDiv is missing
+               clearInterval(loadingInterval);
+               button.disabled = false; button.textContent = "🎞️ 영상 처리 시작";
+               delete button.dataset.loadingIntervalId;
+               return;
+          }
+
+          // Call the existing processing function
+          initiateVideoProcessing(instanceId, relPath, fileName, messagesDiv);
       }
 
     </script>
 
     <!-- Mini Audio Player -->
-    <div id="mini-audio-player" style="display: none;">
+    <div id="mini-audio-player" style="display: none;"> <!-- Base container -->
         <div class="mini-player-content">
             <span id="mini-player-title">Now Playing...</span>
             <div class="mini-player-controls">
@@ -1502,8 +1526,8 @@
                  <input type="range" id="mini-player-progress" value="0" min="0" max="100">
             </div>
              <span id="mini-player-time">0:00 / 0:00</span>
-             <!-- Playlist Display Area -->
-             <ul id="mini-player-playlist"></ul>
++             <!-- NEW Playlist UL -->
++             <ul id="mini-player-playlist" style="display: none;"></ul> <!-- Initially hidden -->
         </div>
         <button id="mini-player-close" title="Close Player">&times;</button>
     </div>

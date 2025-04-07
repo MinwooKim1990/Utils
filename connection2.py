@@ -884,9 +884,13 @@ def process_document():
     # <<< 이하 로직은 모델 로드 가정 하에 진행 >>>
     if not request.content_type or not request.content_type.startswith('application/json'):
         return jsonify({"error": "Request must be JSON."}), 415
+
+    # Parse JSON data from the request
     data = request.json
     if data is None:
         return jsonify({"error": "Invalid JSON data received."}), 400
+
+    # Extract required fields from JSON data
     rel_path = data.get('relPath')
     instance_id = data.get('instanceId')
     file_name = data.get('fileName')
@@ -1195,22 +1199,30 @@ def chat():
 
 
     # ... (이하 /chat 엔드포인트의 나머지 로직 동일: 비디오 처리, 프롬프트 준비, API 호출, 스트리밍 등) ...
-    is_video_chat = False; video_part = None
+    is_video_chat = False; video_file_object = None
     if instance_id and instance_id in video_processing_state and not is_document_chat:
         is_video_chat = True; video_state = video_processing_state[instance_id]; file_uri = video_state.get('file_uri')
-        print(f"[chat] Instance {instance_id} found in video store. URI: {file_uri}") # Debug log
-        if file_uri:
+        file_name_google = video_state.get('file_name_google') # <<< Get Google's file name
+        print(f"[chat] Instance {instance_id} found in video store. URI: {file_uri}, Google Name: {file_name_google}") # Debug log
+        if file_name_google: # <<< Check if we have the Google file name
             try:
-                video_part = genai.Part.from_uri(uri=file_uri) # type: ignore
-                print(f"[chat] Successfully created video Part from URI for instance {instance_id}") # Debug log
-            except Exception as e: print(f"[chat] Error creating video Part for instance {instance_id}: {e}"); video_part = None # Debug log
-        else: print(f"[chat] Warning: Video URI not found in state for instance {instance_id}") # Debug log
+                print(f"[chat] Attempting to get File object using name: {file_name_google}")
+                video_file_object = genai.get_file(name=file_name_google) # type: ignore
+                print(f"[chat] Successfully retrieved video File object for instance {instance_id}. State: {video_file_object.state.name}") # Debug log
+            except exceptions.NotFound:
+                print(f"[chat] Error retrieving video File object: File {file_name_google} not found on Google.")
+                video_file_object = None
+            except Exception as e:
+                print(f"[chat] Error retrieving video File object for instance {instance_id} using name {file_name_google}: {e}")
+                video_file_object = None
+        else: print(f"[chat] Warning: Google file name not found in state for instance {instance_id}") # Debug log
 
+    # <<< Corrected try-except block for model initialization >>>
     try:
         genai.configure(api_key=app.config['GEMINI_API_KEY'])
         model = genai.GenerativeModel(model_name)
         print(f"[chat] Gemini model '{model_name}' initialized.") # Debug log
-    except Exception as e:
+    except Exception as e: # <<< Corrected indentation
         print(f"[chat] Error initializing model '{model_name}': {e}") # Debug log
         return jsonify({"error": f"Failed to initialize model: {e}"}), 500
 
@@ -1235,15 +1247,23 @@ def chat():
         except Exception as e: print(f"[chat] Error processing image file: {e}"); image_prompt_part = None # Debug log
 
     final_api_parts = []
-    if final_prompt_text: final_api_parts.append(final_prompt_text)
-    # Ensure image part is added ONLY if it's an image chat (not video, not just RAG)
-    if image_prompt_part and not is_video_chat:
+
+    # <<< MODIFICATION START: Prioritize media parts >>>
+    # Add VIDEO file object first if it's a video chat
+    if video_file_object and is_video_chat:
+         final_api_parts.append(video_file_object)
+         print(f"[chat] Added video part FIRST to final API parts.") # Log change
+
+    # Add IMAGE part first if it's an image chat (and not video)
+    elif image_prompt_part and not is_video_chat:
          final_api_parts.append(image_prompt_part)
-         print(f"[chat] Added image part to final API parts.") # Debug log
-    # Ensure video part is added ONLY if it's a video chat
-    if video_part and is_video_chat:
-         final_api_parts.append(video_part)
-         print(f"[chat] Added video part to final API parts.") # Debug log
+         print(f"[chat] Added image part FIRST to final API parts.") # Log change
+
+    # Add text part AFTER media parts
+    if final_prompt_text:
+        final_api_parts.append(final_prompt_text)
+        print(f"[chat] Added text part AFTER media to final API parts.") # Log change
+    # <<< MODIFICATION END >>>
 
     # <<< DEBUG LOGGING for final_api_parts >>>
     print(f"[chat] Final API Parts prepared ({len(final_api_parts)} parts):") # Debug log
@@ -1253,22 +1273,45 @@ def chat():
         elif isinstance(part, dict) and 'mime_type' in part and 'data' in part:
             print(f"  Part {i}: Image/Data - MimeType: {part['mime_type']}, Data Length: {len(part['data'])}") # Debug log
         elif hasattr(part, 'uri'): # Assuming it's a genai.Part object with a URI
-            print(f"  Part {i}: URI Part - URI: {part.uri}") # Debug log
-        else:
+             # <<< Safely access uri using getattr >>>
+             part_uri = getattr(part, 'uri', None)
+             print(f"  Part {i}: URI Part - URI: {part_uri}") # Debug log
+        else: # <<< Corrected indentation
             print(f"  Part {i}: Unknown type - {type(part)}") # Debug log
     # <<< END DEBUG LOGGING >>>
 
     if not final_api_parts:
         print("[chat] No content to send, returning empty message.") # Debug log
-        def empty_stream(): yield f'event: data\ndata: {{"response": "메시지를 입력해주세요."}}\n\n'; yield f'event: end\ndata: {{}}\n\n'
+        def empty_stream(): yield f'event: data\ndata: {json.dumps({"response": "메시지를 입력해주세요."})}\n\n'; yield f'event: end\ndata: {{}}\n\n'
         return Response(empty_stream(), mimetype='text/event-stream')
 
     print(f"[chat] Sending {len(final_api_parts)} parts to Gemini model {model_name}...") # Debug log
 
     def stream():
+        nonlocal model, chat_session # Allow modification of outer scope variables
         try:
+            # <<< MODIFICATION START: Check model compatibility for video >>>
+            effective_model_name = model_name
+            if is_video_chat and not model_name.startswith("gemini-1.5"):
+                 # Force a video-capable model if needed
+                 effective_model_name = "gemini-1.5-flash-latest" # Or gemini-1.5-pro-latest
+                 print(f"[chat] Warning: Original model '{model_name}' might not support video. Switching to '{effective_model_name}'.")
+                 # Re-initialize model and chat session with the compatible model
+                 try:
+                     model = genai.GenerativeModel(effective_model_name)
+                     chat_session = model.start_chat(history=history) # Use original history
+                     print(f"[chat] Re-initialized model and chat session for video with {effective_model_name}.")
+                 except Exception as model_init_err:
+                      print(f"[chat] CRITICAL: Failed to re-initialize model to {effective_model_name}: {model_init_err}")
+                      # Fallback or error handling needed here. Yielding error message.
+                      yield f'data: {json.dumps({"error": f"비디오 호환 모델({effective_model_name}) 초기화 실패: {model_init_err}"})}\n\n'
+                      yield f'event: end\ndata: Error occurred\n\n'
+                      return # Stop the stream generator
+            # <<< MODIFICATION END >>>
+
+            # Use the potentially updated chat_session
             response_stream = chat_session.send_message(final_api_parts, stream=True)
-            print(f"[chat] Stream initiated.") # Debug log
+            print(f"[chat] Stream initiated using model {effective_model_name}.") # Debug log
             for chunk in response_stream:
                 if chunk.parts:
                      # print(f"[chat] Stream chunk received: {chunk.parts[0].text[:50]}...") # Verbose: log each chunk
@@ -1285,6 +1328,7 @@ def chat():
         except BlockedPromptException as e:
             print(f"[chat] BlockedPromptException: {e}") # Debug log
             yield f'data: {json.dumps({"error": f"요청 차단됨: {e}"})}\n\n'; yield f'event: end\ndata: Error occurred\n\n'
+        # <<< Corrected indentation for the general exception >>>
         except Exception as e:
             print(f"[chat] Exception during streaming: {e}") # Debug log
             import traceback

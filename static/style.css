@@ -1,3 +1,4 @@
+/* ---- Base Styles ---- */
 :root {
   color-scheme: light dark;
   --bg: #f8fafc;
@@ -758,18 +759,19 @@ button:hover {
   gap: 10px;
 }
 .chat-area .chat-input-area {
-  /* Match main chat style EXACTLY */
-  display: flex;         /* <<<<< ADDED: Force flex display */
-  align-items: center;   /* <<<<< ADDED: Align items vertically */
-  gap: 8px;
-  padding: 12px 16px;
+  /* Ensure this matches #chat-input-area behavior */
+  display: flex;         /* <<< Core property */
+  align-items: center;   /* <<< Core property */
+  gap: 8px;              /* <<< Core property */
+  padding: 12px 16px;    /* Match main chat padding */
   border-top: 1px solid var(--border);
 }
 
-/* Ensure input and buttons within chat-area input area behave correctly */
+/* Ensure input grows */
 .chat-area .chat-input-area input[type="text"] {
-    flex-grow: 1; /* Allow input to take remaining space */
-    /* Inherit other styles like padding, border, etc. from main chat-input */
+    flex-grow: 1; /* <<< Core property */
+    min-width: 0; /* <<< ADDED: Allow input to shrink if needed */
+    /* Inherit styles */
     padding: 10px;
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -783,16 +785,44 @@ button:hover {
   border-color: var(--link);
 }
 
+/* Ensure buttons don't shrink and have base padding */
 .chat-area .chat-input-area button {
-   /* Ensure buttons don't grow and use main chat padding */
-   flex-shrink: 0;
-   padding: 10px 18px; /* Match #send-button style */
+   flex-shrink: 0; /* <<< Core property */
+   padding: 10px 18px; /* Default padding like main #send-button */
+   /* Inherit other button styles (background, color, border-radius etc.) */
+   /* from general button styles if not overridden */
 }
 
-/* Adjust specific button padding if needed (e.g., image button) */
+/* Override padding for specific icon buttons */
+.chat-area .chat-input-area button[id$='-image-upload-button'], /* Use attribute selector */
+.chat-area .chat-input-area button[id$='-mic-button'] { /* Use attribute selector */
+    padding: 8px 12px; /* Match corresponding main buttons */
+    background: var(--hover); /* Specific background/color for icon buttons */
+    color: var(--fg);
+}
+.chat-area .chat-input-area button[id$='-image-upload-button']:hover,
+.chat-area .chat-input-area button[id$='-mic-button']:hover {
+    background: var(--border);
+    transform: none;
+    opacity: 1;
+}
+
+/* Style the send button specifically if needed (e.g., main link color) */
+.chat-area .chat-input-area button[id$='-send-button'] {
+    background: var(--link); /* Match main send button */
+    color: white;
+    padding: 10px 18px; /* Explicitly set padding */
+}
+.chat-area .chat-input-area button[id$='-send-button']:hover {
+     opacity: 0.9;
+     transform: translateY(-1px);
+}
+
+/* REMOVE OLD Selectors - replaced above */
+/*
 .chat-area .chat-input-area #image-upload-button,
 .chat-area .chat-input-area #mic-button {
-    padding: 8px 12px; /* Match corresponding main buttons */
+    padding: 8px 12px;
     background: var(--hover);
     color: var(--fg);
 }
@@ -802,6 +832,7 @@ button:hover {
     transform: none;
     opacity: 1;
 }
+*/
 
 .chat-area .image-preview-area {
     /* Match main chat style */
@@ -1034,3 +1065,41 @@ button:hover {
     color: var(--card); /* Ensure text contrast on highlight bg */
 }
 /* --- Mini Player Playlist Styles --- END */
+
+/* --- NEW: Styles for File Upload Area in Preview Chat --- */
+.chat-area .file-upload-area {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 16px; /* Consistent padding */
+    border-top: 1px solid var(--border); /* Separator line */
+    background-color: var(--bg); /* Slightly different background maybe */
+}
+
+/* Style the label to look like a button */
+.chat-area .file-upload-area label {
+    cursor: pointer;
+    padding: 8px 12px;
+    background-color: var(--hover);
+    color: var(--fg);
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    font-size: 13px;
+    transition: var(--transition);
+}
+
+.chat-area .file-upload-area label:hover {
+    background-color: var(--border);
+}
+
+/* Style the filename display */
+.chat-area .file-upload-area span {
+    font-size: 12px;
+    opacity: 0.8;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 1; /* Allow filename to shrink */
+    min-width: 0; /* Allow filename to shrink */
+}
+/* --- End File Upload Area Styles --- */
