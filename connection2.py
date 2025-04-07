@@ -21,6 +21,7 @@ import tempfile
 import glob
 import time # <<< Add time import for polling
 import threading
+import uuid # For unique subtitle IDs
 
 # <<< RAG Imports >>>
 import fitz # PyMuPDF # type: ignore
@@ -75,6 +76,11 @@ document_vector_stores = {}
 # Structure: { instanceId: { 'rel_path': str, 'file_uri': str, 'file_name_google': str } }
 video_processing_state = {}
 # <<< End Changed video state store >>>
+
+# <<< NEW: In-memory store for temporary subtitles >>>
+# Structure: { subtitle_id: vtt_content }
+subtitle_cache = {}
+# <<< END NEW subtitle store >>>
 
 def require_api_key(f):
     @functools.wraps(f)
@@ -1413,6 +1419,120 @@ def handle_audio_chat():
         error_msg = f"Gemini API ({model_name}) 오디오 처리 중 오류 발생: {error_detail}"
         return {"error": error_msg}, 500
 # --- Gemini Audio Chat Endpoint --- END
+
+# --- >>> NEW: SRT to VTT Conversion Helper <<< ---
+def srt_to_vtt(srt_content):
+    """Converts SRT formatted string to VTT formatted string."""
+    if not srt_content:
+        return None
+    try:
+        vtt_content = "WEBVTT\n\n"
+        # Replace comma decimal separator with period for VTT timestamps
+        srt_content = srt_content.replace(',', '.')
+        # Split SRT into blocks (index, time, text)
+        blocks = srt_content.strip().split('\n\n')
+        for block in blocks:
+            lines = block.split('\n')
+            if len(lines) >= 3:
+                # Skip the index line (usually the first line)
+                # Add the timestamp line directly (already modified commas)
+                vtt_content += lines[1] + "\n"
+                # Add the text lines
+                vtt_content += "\n".join(lines[2:]) + "\n\n"
+            elif len(lines) == 2: # Handle blocks with only timestamp and one line of text
+                vtt_content += lines[0] + "\n" # Assume line 0 is timestamp if only 2 lines
+                vtt_content += lines[1] + "\n\n"
+
+        return vtt_content.strip()
+    except Exception as e:
+        print(f"Error converting SRT to VTT: {e}")
+        return None
+# --- >>> END SRT to VTT Conversion Helper <<< ---
+
+# --- >>> NEW: Video Info Endpoint <<< ---
+@app.route('/video_info/<path:rel_path>')
+@require_api_key
+def get_video_info(rel_path):
+    drive = get_base_dir()
+    try:
+        video_full_path = get_validated_path(drive, rel_path)
+        video_dir = os.path.dirname(video_full_path)
+        video_filename_no_ext = os.path.splitext(os.path.basename(video_full_path))[0]
+
+        subtitle_vtt_url = None
+        srt_file_path = os.path.join(video_dir, f"{video_filename_no_ext}.srt")
+
+        if os.path.exists(srt_file_path):
+            print(f"Found SRT file: {srt_file_path}")
+            try:
+                # Try reading with common encodings
+                srt_content = None
+                for enc in ['utf-8', 'cp949', 'euc-kr']:
+                    try:
+                        with open(srt_file_path, 'r', encoding=enc) as f:
+                            srt_content = f.read()
+                        print(f"Read SRT with encoding: {enc}")
+                        break
+                    except UnicodeDecodeError:
+                        continue
+                    except Exception as read_err:
+                         print(f"Error reading SRT {srt_file_path} with {enc}: {read_err}")
+                         continue
+                
+                if srt_content is None: # Try binary read as fallback
+                    try:
+                        with open(srt_file_path, 'rb') as f:
+                             srt_content = f.read().decode('utf-8', errors='replace')
+                        print("Read SRT with binary fallback (utf-8 replace)")
+                    except Exception as bin_read_err:
+                        print(f"Failed final binary read for SRT {srt_file_path}: {bin_read_err}")
+
+
+                if srt_content:
+                    vtt_content = srt_to_vtt(srt_content)
+                    if vtt_content:
+                        subtitle_id = str(uuid.uuid4())
+                        subtitle_cache[subtitle_id] = vtt_content
+                        encrypted_key = encode_string(API_KEY, session['encrypt_password'])
+                        # Construct the URL for the /subtitle endpoint
+                        subtitle_vtt_url = url_for('serve_subtitle', subtitle_id=subtitle_id, api_key=encrypted_key, _external=False) # Use relative URL
+                        print(f"Generated VTT URL: {subtitle_vtt_url}")
+                    else:
+                         print("Failed to convert SRT to VTT.")
+                else:
+                     print(f"Could not read content from SRT file: {srt_file_path}")
+
+            except Exception as e:
+                print(f"Error processing SRT file {srt_file_path}: {e}")
+
+        encrypted_key = encode_string(API_KEY, session['encrypt_password'])
+        video_stream_url = url_for('stream_file', rel_path=rel_path, drive=drive, api_key=encrypted_key, _external=False) # Use relative URL
+
+        return jsonify({
+            "video_url": video_stream_url,
+            "subtitle_url": subtitle_vtt_url # Will be null if no subtitle found/processed
+        })
+
+    except FileNotFoundError:
+        abort(404, "Video file not found.")
+    except Exception as e:
+        print(f"Error in /video_info for {rel_path}: {e}")
+        abort(500, "Error retrieving video information.")
+# --- >>> END Video Info Endpoint <<< ---
+
+# --- >>> NEW: Subtitle Serving Endpoint <<< ---
+@app.route('/subtitle/<subtitle_id>')
+@require_api_key # Reuse API key check for security
+def serve_subtitle(subtitle_id):
+    vtt_content = subtitle_cache.get(subtitle_id)
+    if vtt_content:
+        # Optionally remove from cache after serving? For now, keep it.
+        # del subtitle_cache[subtitle_id]
+        return Response(vtt_content, mimetype='text/vtt; charset=utf-8')
+    else:
+        print(f"Subtitle ID not found in cache: {subtitle_id}")
+        abort(404, "Subtitle not found.")
+# --- >>> END Subtitle Serving Endpoint <<< ---
 
 # <<< 앱 실행 부분 복원: 스레드 로직 제거 >>>
 if __name__ == '__main__':

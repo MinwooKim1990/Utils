@@ -1112,16 +1112,53 @@
           console.log(`[loadPreviewContent] Determined type: ${pType}, URL: ${pUrl}`); // Debug Log
 
           let el;
-          if (pType !== 'unsupported' && pUrl) { // <<< Check pUrl is not null
+          // <<< MODIFICATION START for Video + Subtitles >>>
+          if (pType === 'video') {
+              console.log(`[loadPreviewContent] Video detected. Fetching video info for: ${relPath}`);
+              // Fetch video info (stream URL and potential subtitle URL)
+              fetch(`/video_info/${encP}?drive=${drv}&api_key=${key}`)
+                  .then(response => {
+                      if (!response.ok) throw new Error(`Video info fetch failed: ${response.statusText}`);
+                      return response.json();
+                  })
+                  .then(data => {
+                      console.log(`[loadPreviewContent] Received video info:`, data);
+                      el = document.createElement('video');
+                      el.controls = true;
+                      el.autoplay = false;
+                      el.src = data.video_url; // Use URL from the info endpoint
+                      el.onerror = () => { previewArea.innerHTML='<span class="preview-placeholder">Video load failed.</span>'; };
+
+                      // Add subtitle track if URL is provided
+                      if (data.subtitle_url) {
+                          console.log(`[loadPreviewContent] Adding subtitle track: ${data.subtitle_url}`);
+                          const track = document.createElement('track');
+                          track.kind = 'subtitles';
+                          track.label = '한국어'; // Or derive from filename?
+                          track.srclang = 'ko';
+                          track.src = data.subtitle_url;
+                          track.default = true; // Make it default
+                          el.appendChild(track);
+                      }
+
+                      // Clear placeholder and append video element
+                      previewArea.innerHTML = '';
+                      previewArea.appendChild(el);
+                  })
+                  .catch(error => {
+                      console.error(`[loadPreviewContent] Error fetching/processing video info: ${error}`);
+                      previewArea.innerHTML = `<span class="preview-placeholder">Error loading video info: ${error.message}.</span>`;
+                  });
+          } else if (pType !== 'unsupported' && pUrl) { // Handle other preview types
+              // <<< MODIFICATION END >>>
               console.log(`[loadPreviewContent] Loading ${pType} preview for ${relPath} (${fileName}) in ${instanceId}`);
-              if (pType==='video'){ el=document.createElement('video');el.controls=true;el.autoplay=false;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Video failed.</span>';}; } // Autoplay false initially for video
-              else if (pType==='audio'){ el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Audio failed.</span>';}; }
+              if (pType==='audio'){ el=document.createElement('audio');el.controls=true;el.autoplay=true;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Audio failed.</span>';}; }
               else if (pType==='image'){ el=document.createElement('img');el.alt=fileName;el.src=pUrl;el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Image failed.</span>';}; }
               else if ((pType==='text' || pType==='pdf') && pUrl){ el=document.createElement('iframe');el.style.cssText='width:100%;height:100%;border:none;';el.src=pUrl;el.onload=()=>console.log(`Iframe ${pType} loaded.`);el.onerror=()=>{previewArea.innerHTML='<span class="preview-placeholder">Preview failed.</span>';}; }
 
               if(el){ previewArea.innerHTML=''; previewArea.appendChild(el); }
               else { previewArea.innerHTML='<span class="preview-placeholder">Preview generation failed.</span>'; console.warn(`Preview element generation failed for type ${pType}, URL: ${pUrl}`); }
-               } else {
+          } else {
               previewArea.innerHTML='<span class="preview-placeholder">Preview not supported for this file type.</span>';
               console.log(`Preview not supported for extension: ${ext}`);
           }
