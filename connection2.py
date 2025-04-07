@@ -15,6 +15,7 @@ from PIL import Image
 import io
 import google.api_core.exceptions as exceptions
 from google.generativeai.types import BlockedPromptException
+from google.generativeai import types
 import subprocess
 import tempfile
 import glob
@@ -1234,8 +1235,13 @@ def chat():
     if image_file and not is_document_chat:
         print(f"[chat] Processing attached image: {image_file.filename} ({image_file.mimetype})") # Debug log
         try:
-            img_bytes = image_file.read(); image_prompt_part = {"mime_type": image_file.mimetype, "data": img_bytes}
-            print(f"[chat] Image bytes read: {len(img_bytes)}") # Debug log
+            img_bytes = image_file.read()
+            # <<< 수정: types.Part.from_bytes 사용 >>>
+            image_prompt_part = {
+                "mime_type": image_file.mimetype,
+                "data": img_bytes
+            }
+            print(f"[chat] Image bytes read and converted to Part: {len(img_bytes)}") # Debug log
             # Check if history is empty and prepend initial analysis prompt for images
             # Note: This logic might need adjustment depending on desired UX
             if not history or len(history) == 0:
@@ -1254,10 +1260,10 @@ def chat():
          final_api_parts.append(video_file_object)
          print(f"[chat] Added video part FIRST to final API parts.") # Log change
 
-    # Add IMAGE part first if it's an image chat (and not video)
-    elif image_prompt_part and not is_video_chat:
+    # Add IMAGE part if present (independent of video)
+    if image_prompt_part: 
          final_api_parts.append(image_prompt_part)
-         print(f"[chat] Added image part FIRST to final API parts.") # Log change
+         print(f"[chat] Added image part to final API parts.") # Adjusted log
 
     # Add text part AFTER media parts
     if final_prompt_text:

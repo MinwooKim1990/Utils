@@ -156,7 +156,7 @@
           let element;
           if (fileType === 'video') { element = document.createElement('video'); element.controls = true; element.autoplay = true; element.style.maxWidth = '90vw'; element.style.maxHeight = '80vh'; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Video load failed.</p>'; }; }
           else if (fileType === 'audio') { element = document.createElement('audio'); element.controls = true; element.autoplay = true; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Audio load failed.</p>'; }; }
-          else if (fileType === 'image') { element = document.createElement('img'); element.style.maxWidth = '90vw'; element.style.maxHeight = '80vh'; element.style.display = 'block'; element.style.margin = 'auto'; element.alt = fileName; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Image load failed.</p>'; }; }
+          else if (fileType === 'image') { element = document.createElement('img'); element.style.maxWidth = '90vw'; element.style.maxHeight = '80vh'; element.style.display = 'block'; element.alt = fileName; element.src = url; element.onerror = () => { previewContent.innerHTML = '<p>Image load failed.</p>'; }; }
           else if (fileType === 'text' || fileType === 'pdf') { element = document.createElement('iframe'); element.style.width = '90vw'; element.style.height = '80vh'; element.style.border = 'none'; element.style.backgroundColor = 'var(--card, #fff)'; element.src = url; element.onload = () => console.log("Modal iframe loaded."); element.onerror = () => { previewContent.innerHTML = '<p>Preview load failed.</p>'; }; }
           if (element) { previewContent.innerHTML = ''; previewContent.appendChild(element); previewOverlay.style.display = 'flex'; }
           else { console.error("Could not create preview element for type:", fileType); previewContent.innerHTML = '<p>Cannot create preview element.</p>'; previewOverlay.style.display = 'flex'; }
@@ -721,14 +721,6 @@
           if(chatElements.micButton) chatElements.micButton.disabled = true;
           if(chatElements.input) chatElements.input.value = ''; // Clear input after getting value
 
-          if (mainChatImageAttached) {
-              clearMainAttachedImage(); // Clear main preview
-          } else if (isFileChat && chatElements.imagePreviewArea && instanceType === 'media') {
-              // Only clear attached image preview for media file chats if one was temporarily attached (unlikely current flow)
-              clearAttachedImage(instanceId);
-          }
-          // --- Disable buttons and clear input --- END
-
           try {
               addMessageToChat("...".padStart(3), 'assistant', chatElements, null, null); // Thinking indicator (don't add to history)
               const thinking = chatElements.messages.lastElementChild;
@@ -799,7 +791,11 @@
                       fetchOpts.headers = { 'Content-Type': 'application/json' };
                   }
                   // >>> Moved image clearing to AFTER successful send attempt in finally block for robustness <<<
-                  // currentImgRef.attachedImageData = null;
+                  // This ensures it's cleared even if the fetch fails immediately, 
+                  // but wasn't sent.
+                  // if (!isFileChat && currentImgRef) {
+                  //     clearMainAttachedImage(); // Use the existing function
+                  // }
               }
 
               // --- Make API Call ---
@@ -847,11 +843,7 @@
               if(chatElements.sendButton) chatElements.sendButton.disabled = false;
               if(chatElements.micButton) chatElements.micButton.disabled = false; // Check existence
               // Clear main attached image explicitly (redundant but safe)
-              if (!isFileChat && currentImgRef) currentImgRef.attachedImageData = null;
-              // <<< Clear main attached image data AFTER the fetch attempt >>>
-              // This ensures it's cleared even if the fetch fails immediately, 
-              // but wasn't sent.
-              if (!isFileChat && currentImgRef) {
+              if (!isFileChat && mainAttachedImageData) {
                   clearMainAttachedImage(); // Use the existing function
               }
           }
