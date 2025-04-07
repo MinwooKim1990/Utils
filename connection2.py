@@ -44,7 +44,7 @@ app.config['GEMINI_API_KEY'] = gemini_api_key
 
 # 평문 API 키와 관련 설정
 API_KEY = 'MinwooKim1990'
-ALLOWED_DRIVES = ['D:/', 'E:/']
+ALLOWED_DRIVES = ['D:/', 'E:/', 'I:/']
 HIDDEN_NAMES = {'system volume information', '$recycle.bin'}
 
 # 인증된 디바이스 설정
@@ -1536,7 +1536,23 @@ def serve_subtitle(subtitle_id):
 
 # <<< 앱 실행 부분 복원: 스레드 로직 제거 >>>
 if __name__ == '__main__':
-    # 모델 로딩은 스크립트 상단에서 이미 시도됨
     print("Starting Flask server (initial model load attempted).")
-    # Flask 앱 실행
-    app.run(host='0.0.0.0', port=5000, debug=True) # debug=True 유지 시 재시작 시 모델 다시 로드 시도
+    try:
+        # cert_path, key_path 정의 부분은 그대로 두거나 주석 처리해도 됩니다.
+        cert_path = os.path.join(os.path.dirname(__file__), 'cert.pem')
+        key_path = os.path.join(os.path.dirname(__file__), 'key.pem')
+        # ssl_context 값을 원래 인증서 경로로 복원하고 포트를 443으로 유지
+        print(f"Attempting to run with provided SSL context ({cert_path}, {key_path})...")
+        app.run(host='0.0.0.0', port=443, debug=True, ssl_context=(cert_path, key_path)) # 자체 서명 인증서 사용
+    except FileNotFoundError: # 인증서 파일이 없을 경우 처리
+        print(f"\n\nError starting Flask server: SSL certificate or key file not found.")
+        print(f"Expected cert at: {cert_path}")
+        print(f"Expected key at: {key_path}")
+        print("Falling back to adhoc SSL context for development purposes...")
+        try:
+            app.run(host='0.0.0.0', port=443, debug=True, ssl_context='adhoc') # Fallback
+        except Exception as adhoc_e:
+             print(f"\n\nError starting Flask server even with adhoc SSL: {adhoc_e}\n\n")
+
+    except Exception as e:
+        print(f"\n\nError starting Flask server: {e}\n\n")

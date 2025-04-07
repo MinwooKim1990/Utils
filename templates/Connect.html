@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>미누의 파일서버 보안 접속</title>
+  <style>
+    body {
+      font-family: 'Arial', sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      color: #e6e6e6;
+    }
+    .container {
+      background-color: #222831;
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+      text-align: center;
+      max-width: 500px;
+      border: 1px solid #393e46;
+    }
+    h1 { 
+      color: #00adb5; 
+      margin-top: 0; 
+      font-weight: bold;
+    }
+    p {
+      color: #eeeeee;
+    }
+    .button {
+      display: inline-block;
+      background-color: #00adb5;
+      color: white;
+      padding: 15px 32px;
+      text-align: center;
+      text-decoration: none;
+      font-size: 16px;
+      margin: 20px 0;
+      cursor: pointer;
+      border-radius: 8px;
+      font-weight: bold;
+      transition: all 0.3s;
+      border: none;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+    }
+    .button:hover { 
+      background-color: #0097a7; 
+      transform: translateY(-2px);
+      box-shadow: 0 6px 8px rgba(0, 0, 0, 0.3);
+    }
+    .password-container {
+      margin: 20px 0;
+      text-align: center;
+      position: relative;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .input-wrapper {
+      position: relative;
+      width: 80%;
+    }
+    input[type="password"],
+    input[type="text"] {
+      padding: 12px;
+      font-size: 16px;
+      border: 1px solid #393e46;
+      border-radius: 8px;
+      width: 100%;
+      background-color: #2d333b;
+      color: #eeeeee;
+      transition: all 0.3s;
+      padding-right: 40px; /* 눈 아이콘을 위한 공간 */
+    }
+    input[type="password"]:focus,
+    input[type="text"]:focus {
+      outline: none;
+      border-color: #00adb5;
+      box-shadow: 0 0 0 2px rgba(0, 173, 181, 0.3);
+    }
+    input[type="password"]::placeholder,
+    input[type="text"]::placeholder {
+      color: #8d8d8d;
+    }
+    input[type="hidden"] {
+      display: none;
+    }
+    .error {
+      color: #ff6b6b;
+      font-size: 14px;
+      margin-top: 10px;
+      display: none;
+    }
+    .loading {
+      display: none;
+      margin: 20px 0;
+    }
+    .spinner {
+      border: 6px solid #2d333b;
+      border-top: 6px solid #00adb5;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    /* 눈 모양 버튼 스타일 */
+    .toggle-password {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: #8d8d8d;
+      font-size: 18px;
+      transition: color 0.3s;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .toggle-password:hover {
+      color: #00adb5;
+    }
+    /* 눈 아이콘 스타일 */
+    .eye-icon {
+      width: 24px;
+      height: 24px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>미누의 파일서버 보안 접속</h1>
+    <p>API 키를 입력하세요.</p>
+    <div class="password-container">
+      <div class="input-wrapper">
+        <input type="password" id="apiKeyInput" placeholder="API 키 입력">
+        <button type="button" class="toggle-password" onclick="togglePassword()">
+          <!-- 눈 열린 아이콘 (기본) -->
+          <svg class="eye-icon" id="eyeIcon" viewBox="0 0 24 24">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+            <circle cx="12" cy="12" r="3"></circle>
+          </svg>
+        </button>
+      </div>
+      <p class="error" id="errorMsg">API 키를 입력하세요.</p>
+    </div>
+    <!-- 숨겨진 필드에 Mac OS 여부와 device 파라미터 저장 -->
+    <input type="hidden" id="isMac" value="">
+    <input type="hidden" id="deviceParam" value="">
+    <button class="button" onclick="connectToServer()">서버 접속하기</button>
+    <div class="loading" id="loadingIndicator">
+      <div class="spinner"></div>
+      <p>접속 중...</p>
+    </div>
+  </div>
+  
+  <script>
+    function connectToServer() {
+      document.getElementById('loadingIndicator').style.display = 'block';
+      document.getElementById('errorMsg').style.display = 'none';
+      
+      var apiKey = document.getElementById('apiKeyInput').value.trim();
+      if (!apiKey) {
+        document.getElementById('errorMsg').textContent = 'API 키를 입력하세요.';
+        document.getElementById('errorMsg').style.display = 'block';
+        document.getElementById('loadingIndicator').style.display = 'none';
+        return;
+      }
+      
+      var baseUrl = "https://211.198.13.109:5000/";
+      var params = new URLSearchParams({
+        api_key: apiKey
+      });
+      var serverUrl = baseUrl + "?" + params.toString();
+      window.location.href = serverUrl;
+    }
+    
+    document.getElementById('apiKeyInput').addEventListener('keypress', function(event) {
+      if (event.key === 'Enter') {
+        connectToServer();
+      }
+    });
+  </script>
+</body>
+</html>
