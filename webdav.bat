@@ -1,5 +1,5 @@
 @echo off
-echo Connection start.
+echo WebDAV server start
 echo.
 
 REM Conda venv activate
@@ -16,8 +16,8 @@ echo.
 
 echo server starting.
 
-REM run connection2.py in the same directory
-python "%~dp0connection2.py"
+REM run vid.py in the same directory
+python "%~dp0vid.py"
 
 echo server shut down.
 pause

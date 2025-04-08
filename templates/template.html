@@ -1191,6 +1191,16 @@
               const fileEntry = e.target.closest('.file-entry');
               if (!fileEntry) return; // Click was not inside a file entry
 
+              // <<< 수정 시작: 액션 버튼 클릭인지 확인 >>>
+              // 클릭된 요소가 .file-actions div 안에 있거나, .delete-link 또는 download 링크 자체인지 확인
+              if (e.target.closest('.file-actions') || e.target.classList.contains('delete-link') || (e.target.tagName === 'A' && e.target.href.includes('/download'))) {
+                   // 삭제 링크의 경우 onclick 핸들러가 이미 있으므로 여기서 아무것도 안 함
+                   // 다운로드 링크의 경우 기본 동작(href 이동)을 허용하기 위해 여기서 아무것도 안 함
+                   console.log("[Click] Action button clicked, preventing preview.");
+                   return; // 이벤트 처리를 중단하고 기본 동작 또는 onclick 핸들러에 맡김
+               }
+              // <<< 수정 끝 >>>
+
               if (e.detail !== 1) return; // Ignore multi-clicks handled by the browser (like double-click selecting text)
 
               e.preventDefault(); // Prevent default behavior for this single click

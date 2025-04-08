@@ -921,16 +921,24 @@ def process_document():
         supported_exts = ['.pdf', '.txt', '.md', '.py', '.js', '.html', '.css', '.json', '.csv', '.xml', '.yaml', '.yml', '.ini', '.cfg', '.log', '.sh', '.bat', '.ps1']
         if file_ext == '.pdf': text = extract_text_from_pdf(full_path)
         elif file_ext in supported_exts: text = extract_text_from_plain(full_path)
-        else: return jsonify({"error": f"Unsupported file type for RAG: {file_ext}"}), 415
+        else:
+            print(f"Error: Unsupported file type for RAG: {file_ext}")
+            return jsonify({"error": f"지원되지 않는 파일 형식입니다: {file_ext}"}), 415
 
-        if text is None: return jsonify({"error": "Failed to extract text."}), 500
+        if text is None:
+            print(f"Error: Failed to extract text from {rel_path}")
+            return jsonify({"error": "파일에서 텍스트를 추출하지 못했습니다."}), 500
+
         chunks = chunk_text(text)
-        if not chunks: return jsonify({"error": "Document empty or could not be chunked."}, 400)
+        if not chunks:
+            print(f"Error: Document empty or could not be chunked: {rel_path}")
+            return jsonify({"error": "문서가 비어있거나 내용을 나눌 수 없습니다."}), 400
 
         embeddings = get_embeddings(chunks) # <<< 직접 호출
         if embeddings is None:
             # 이 경우는 모델 로드 성공 후 임베딩 생성 실패
-            return jsonify({"error": "Failed to generate embeddings (model loaded)."}), 500
+            print(f"Error: Failed to generate embeddings for {rel_path}")
+            return jsonify({"error": "텍스트 임베딩 생성에 실패했습니다."}), 500
 
         document_vector_stores[instance_id] = {
             'chunks': chunks,
@@ -942,12 +950,18 @@ def process_document():
 
     except FileNotFoundError:
         print(f"Error: File not found during document processing: {rel_path}")
+        # <<< JSON 응답 반환 >>>
         return jsonify({"error": f"파일을 찾을 수 없습니다: {rel_path}"}), 404
+    except PermissionError:
+        print(f"Error: Permission denied for file during document processing: {rel_path}")
+        # <<< JSON 응답 반환 >>>
+        return jsonify({"error": f"파일 접근 권한이 없습니다: {rel_path}"}), 403
     except Exception as e:
         print(f"Error processing document {rel_path} for instance {instance_id}: {e}")
         import traceback
         traceback.print_exc() # Log the full traceback for debugging
-        return jsonify({"error": f"문서 처리 중 오류 발생: {e}"}), 500
+        # <<< JSON 응답 반환 >>>
+        return jsonify({"error": f"문서 처리 중 예상치 못한 오류 발생: {e}"}), 500
 
 # --- Document Processing Endpoint --- END
 
